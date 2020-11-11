@@ -1,0 +1,12 @@
+dist: bionic
+
+sudo: required
+
+language: cpp
+
+compiler: gcc
+
+script:
+  - bash build.sh -t
+  - bash build.sh -r -t
+  - bash test.sh
