@@ -39,10 +39,11 @@ while test $# -gt 0; do
   shift
 done
 
+OUT=$(pwd)
 cd build/Debug/test || exit 1
 if [ $COVERAGE = 1 ]; then
   # Output to file without color codes
-  ./moon_tst | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" >../../../../test_coverage.txt
+  ./moon_tst | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" >$OUT/test_coverage.txt
 fi
 
 ./moon_tst || exit 1
