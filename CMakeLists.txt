@@ -50,3 +50,6 @@ endif ()
 target_include_directories(moon INTERFACE include)
 
 target_link_libraries(moon INTERFACE lua)
+
+file(GLOB_RECURSE INCLUDES include/*.h)
+install(FILES ${INCLUDES} DESTINATION include/moon)
