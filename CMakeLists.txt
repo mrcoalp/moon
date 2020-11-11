@@ -37,16 +37,16 @@ if (BUILD_DOC)
     endif (DOXYGEN_FOUND)
 endif (BUILD_DOC)
 
-add_subdirectory(lua)
+add_subdirectory(lua-5.4.1)
 
-file(GLOB_RECURSE SOURCES include/*.h src/*.cpp)
+file(GLOB_RECURSE SOURCES include/*.h)
 
-add_library(moon ${SOURCES})
+add_library(moon INTERFACE)
 
 if (MOON_BUILD_TESTS)
     add_subdirectory(test)
 endif ()
 
-target_include_directories(moon PUBLIC include)
+target_include_directories(moon INTERFACE include)
 
-target_link_libraries(moon PUBLIC lua)
+target_link_libraries(moon INTERFACE lua)

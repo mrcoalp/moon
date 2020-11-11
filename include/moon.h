@@ -1,6 +1,8 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
+#include <sstream>
 
 #include "luaclass.h"
 #include "marshalling.h"
@@ -16,15 +18,32 @@ public:
     /**
      * @brief Initializes Lua state and opens libs.
      */
-    static void Init();
+    static void Init() {
+        s_state = luaL_newstate();
+        luaL_openlibs(s_state);
+        moon_types::LuaFunction::Register(s_state);
+    }
 
     /**
      * @brief Closes Lua state main thread.
      */
-    static void CloseState();
+    static void CloseState() {
+        lua_close(s_state);
+        s_state = nullptr;
+    }
 
+    /**
+     * @brief Set a Lua state, provinding pointer.
+     *
+     * @param state State to set.
+     */
     static inline void SetState(lua_State* state) { s_state = state; }
 
+    /**
+     * @brief Set a loger callback to report errors.
+     *
+     * @param logger Callback which is gonna be called every time an error is captured.
+     */
     static inline void SetLogger(const std::function<void(const std::string&)>& logger) { s_logger = logger; }
 
     /**
@@ -32,19 +51,41 @@ public:
      *
      * @return const lua_State*
      */
-    [[nodiscard]] static inline lua_State* GetState() { return s_state; }
+    static inline lua_State* GetState() { return s_state; }
 
     /**
      * @brief Getter for the current top index.
      *
      * @return Current lua stack top index.
      */
-    [[nodiscard]] static inline int GetTop() { return lua_gettop(s_state); }
+    static inline int GetTop() { return lua_gettop(s_state); }
 
     /**
      * @brief Returns a string containing all values current in the stack. Useful for debug purposes.
      */
-    static std::string GetStackDump();
+    static std::string GetStackDump() {
+        int top = lua_gettop(s_state);
+        std::stringstream dump;
+        dump << "***** LUA STACK *****" << std::endl;
+        for (int i = 1; i <= top; ++i) {
+            int t = lua_type(s_state, i);
+            switch (t) {
+                case LUA_TSTRING:
+                    dump << GetValue<const char*>(i) << std::endl;
+                    break;
+                case LUA_TBOOLEAN:
+                    dump << std::boolalpha << GetValue<bool>(i) << std::endl;
+                    break;
+                case LUA_TNUMBER:
+                    dump << GetValue<double>(i) << std::endl;
+                    break;
+                default:  // NOTE(mpinto): Other values, print type
+                    dump << lua_typename(s_state, t) << std::endl;
+                    break;
+            }
+        }
+        return dump.str();
+    }
 
     /**
      * @brief Calls logger with all values current in the stack. Useful for debug purposes.
@@ -58,7 +99,12 @@ public:
      * @return true File loaded successfully.
      * @return false Failed to load file.
      */
-    static bool LoadFile(const char* filePath);
+    static bool LoadFile(const char* filePath) {
+        if (!checkStatus(luaL_loadfile(s_state, filePath), "Error loading file")) {
+            return false;
+        }
+        return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Loading file failed");
+    }
 
     /**
      * @brief Runs Lua script snippet.
@@ -67,7 +113,12 @@ public:
      * @return true Success running script.
      * @return false Failed to run script.
      */
-    static bool RunCode(const char* code);
+    static bool RunCode(const char* code) {
+        if (!checkStatus(luaL_loadstring(s_state, code), "Error running code")) {
+            return false;
+        }
+        return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Running code failed");
+    }
 
     /**
      * @brief Get the type of value in stack, at position index.
@@ -85,8 +136,15 @@ public:
      * @return R
      */
     template <typename R>
-    [[nodiscard]] static inline R GetValue(const int index = 1) {
-        return MS::GetValue(moon_types::MarshallingType<R>{}, s_state, index);
+    static inline R GetValue(const int index = 1) {
+        try {
+            return MS::GetValue(moon_types::MarshallingType<R>{}, s_state, index);
+        } catch (const std::exception& e) {
+            std::stringstream error;
+            error << "An exception was caught by Moon: " << e.what();
+            s_logger(error.str());
+        }
+        return {};
     }
 
     /**
@@ -97,7 +155,7 @@ public:
      * @return R Lua global variable.
      */
     template <typename R>
-    [[nodiscard]] static inline R GetGlobalVariable(const char* name) {
+    static inline R GetGlobalVariable(const char* name) {
         lua_getglobal(s_state, name);
         const R r = GetValue<R>(-1);
         lua_pop(s_state, 1);
@@ -188,7 +246,7 @@ public:
      * @param name Name of the function to be used in Lua.
      * @param fn Function pointer.
      */
-    static void RegisterFunction(const char* name, moon_types::LuaCFunction fn);
+    static void RegisterFunction(const char* name, moon_types::LuaCFunction fn) { lua_register(s_state, name, fn); }
 
     /**
      * @brief Calls Lua function without arguments.
@@ -197,7 +255,14 @@ public:
      * @return true Function successfully called.
      * @return false Unable to call function.
      */
-    static bool CallFunction(const char* name);
+    static bool CallFunction(const char* name) {
+        lua_getglobal(s_state, name);
+        if (!lua_isfunction(s_state, -1)) {
+            lua_pop(s_state, 1);
+            return false;
+        }
+        return checkStatus(lua_pcall(s_state, 0, 0, 0), "Failed to call LUA function");
+    }
 
     /**
      * @brief Calls Lua function.
@@ -290,5 +355,20 @@ private:
      * @return true Lua ok
      * @return false Something failed
      */
-    static bool checkStatus(int status, const char* errMessage = "");
+    static bool checkStatus(int status, const char* errMessage = "") {
+        if (status != LUA_OK) {
+            if (status == LUA_ERRSYNTAX) {
+                const char* msg = lua_tostring(s_state, -1);
+                s_logger(msg != nullptr ? msg : errMessage);
+            } else if (status == LUA_ERRFILE) {
+                const char* msg = lua_tostring(s_state, -1);
+                s_logger(msg != nullptr ? msg : errMessage);
+            }
+            return false;
+        }
+        return true;
+    }
 };
+
+lua_State* Moon::s_state = nullptr;
+std::function<void(const std::string&)> Moon::s_logger;
