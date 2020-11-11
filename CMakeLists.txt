@@ -52,8 +52,6 @@ if (NOT LUA_FOUND)
     set(LUA_INCLUDE_DIR "")
 endif ()
 
-file(GLOB_RECURSE SOURCES include/*.h)
-
 add_library(moon INTERFACE)
 
 if (MOON_BUILD_TESTS)
