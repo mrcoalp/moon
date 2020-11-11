@@ -1,0 +1,1 @@
+cppFunction("passed")

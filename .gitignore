@@ -1,0 +1,18 @@
+# Clion
+.idea/
+cmake-build-debug/
+
+# Code
+.vscode/
+
+# Visual Studio
+.vs/
+out/
+CMakeSettings.json
+
+build/
+logs/
+tidy_coverage.txt
+format_coverage.txt
+test_coverage.txt
+compile_commands.json
