@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 option(BUILD_TESTS "Build test programs" OFF)
 option(BUILD_DOC "Build documentation" OFF)
 
-message("Building MOON...")
+set(LUA_LIB_BRANCH "main")
+set(LUA_LIB_URL "https://github.com/mrcoalp/lua-cmake.git")
+SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
+message("Building Moon...")
 
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the type of build, options are: Debug Release." FORCE)
@@ -37,7 +41,16 @@ if (BUILD_DOC)
     endif (DOXYGEN_FOUND)
 endif (BUILD_DOC)
 
-add_subdirectory(lua-5.4.1)
+find_package(Lua)
+if (NOT LUA_FOUND)
+    message("-- Lua not found, compiling it...")
+    if (NOT EXISTS ${CMAKE_SOURCE_DIR}/lua)
+        execute_process(COMMAND git clone --recurse-submodules -b ${LUA_LIB_BRANCH} --depth 1 ${LUA_LIB_URL} ${CMAKE_SOURCE_DIR}/lua)
+    endif ()
+    add_subdirectory(lua)
+    set(LUA_LIBRARIES lua)
+    set(LUA_INCLUDE_DIR "")
+endif ()
 
 file(GLOB_RECURSE SOURCES include/*.h)
 
@@ -47,9 +60,9 @@ if (MOON_BUILD_TESTS)
     add_subdirectory(test)
 endif ()
 
-target_include_directories(moon INTERFACE include)
+target_include_directories(moon INTERFACE include ${LUA_INCLUDE_DIR})
 
-target_link_libraries(moon INTERFACE lua)
+target_link_libraries(moon INTERFACE ${LUA_LIBRARIES})
 
 file(GLOB_RECURSE INCLUDES include/*.h)
-install(FILES ${INCLUDES} DESTINATION include/moon)
+install(FILES ${INCLUDES} DESTINATION include)

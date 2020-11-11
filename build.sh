@@ -14,6 +14,8 @@ TESTS=OFF
 DOC=OFF
 # Number of jobs
 JOBS=4
+# Lib type
+SHARED_LIB=ON
 
 usage() {
   echo "Usage
@@ -29,6 +31,7 @@ Options
     -c | --clean        - Clean build of configuration
     -i | --install      - Install game to build/bin folder
     -j | --jobs <#jobs> - Number of jobs to use
+    --static            - Build static lib instead of shared
     --ninja             - Use Ninja as build system
     --make              - Use Make as build system (default)
     --cc <#version>     - Specify which GCC compiler <#version> to use. Ex: --cc 9
@@ -56,6 +59,9 @@ while test $# -gt 0; do
   -j | --jobs)
     JOBS=$2
     shift
+    ;;
+  --static)
+    SHARED_LIB=OFF
     ;;
   --ninja)
     BUILD_SYSTEM="Ninja"
@@ -119,7 +125,7 @@ fi
 cd $CONFIGURATION || exit 1
 
 # Run CMake
-cmake -DMOON_BUILD_TESTS=$TESTS -DBUILD_DOC=$DOC ../.. -G"$BUILD_SYSTEM" -DCMAKE_BUILD_TYPE=$CONFIGURATION -DCMAKE_INSTALL_PREFIX=./bin -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || exit 1
+cmake -DBUILD_SHARED_LIBS=$SHARED_LIB -DMOON_BUILD_TESTS=$TESTS -DBUILD_DOC=$DOC ../.. -G"$BUILD_SYSTEM" -DCMAKE_BUILD_TYPE=$CONFIGURATION -DCMAKE_INSTALL_PREFIX=./bin -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || exit 1
 
 if [ $CHECK_ONLY = 1 ]; then
   exit 0
