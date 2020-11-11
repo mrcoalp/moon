@@ -3,8 +3,8 @@ project(moon)
 
 set(CMAKE_CXX_STANDARD 17)
 
-option(BUILD_TESTS "Build test programs" OFF)
-option(BUILD_DOC "Build documentation" OFF)
+option(MOON_BUILD_TESTS "Build test programs" ON)
+option(MOON_BUILD_DOC "Build documentation" OFF)
 
 set(LUA_LIB_BRANCH "main")
 set(LUA_LIB_URL "https://github.com/mrcoalp/lua-cmake.git")
@@ -16,12 +16,6 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the type of build, options are: Debug Release." FORCE)
 endif ()
 
-if (BUILD_SHARED_LIBS)
-    set(LIB_TYPE SHARED)
-else ()
-    set(LIB_TYPE STATIC)
-endif ()
-
 if (${CMAKE_BUILD_TYPE} MATCHES Debug)
     message("-- Build type: Debug")
     message("Adding Debug flag...")
@@ -31,7 +25,7 @@ else ()
     add_definitions(-UNDEBUG)
 endif ()
 
-if (BUILD_DOC)
+if (MOON_BUILD_DOC)
     find_package(Doxygen)
 
     if (DOXYGEN_FOUND)
@@ -39,7 +33,7 @@ if (BUILD_DOC)
     else (DOXYGEN_FOUND)
         message("Doxygen need to be installed to generate the doxygen documentation")
     endif (DOXYGEN_FOUND)
-endif (BUILD_DOC)
+endif (MOON_BUILD_DOC)
 
 find_package(Lua)
 if (NOT LUA_FOUND)

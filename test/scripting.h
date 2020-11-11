@@ -1,6 +1,5 @@
 #pragma once
 
-#include "binding.h"
 #include "moon.h"
 
 int testClass = -1;

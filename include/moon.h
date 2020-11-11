@@ -399,8 +399,13 @@ private:
 
             if ((_index >> 8u) != 0u) {  // Try to set a func
                 char c[128];
-                sprintf(c, "Trying to set the method [%s] of class [%s]", (*obj)->T::Binding.GetMethods()[_index ^ (1u << 8u)].name,
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+                sprintf_s(c, "Moon: Trying to set the method [%s] of class [%s]", (*obj)->T::Binding.GetMethods()[_index ^ (1u << 8u)].name,
+                          T::Binding.GetName());
+#else
+                sprintf(c, "Moon: Trying to set the method [%s] of class [%s]", (*obj)->T::Binding.GetMethods()[_index ^ (1u << 8u)].name,
                         T::Binding.GetName());
+#endif
                 luaL_error(L, c);
                 return 0;
             }
@@ -541,7 +546,7 @@ public:
     template <typename T>
     static std::vector<T> GetValue(moon_types::MarshallingType<std::vector<T>>, lua_State* L, int index) {
         ensure_type(lua_istable(L, index));
-        size_t size = lua_rawlen(L, -1);
+        size_t size = (size_t)lua_rawlen(L, -1);
         std::vector<T> vec;
         vec.reserve(size);
         for (size_t i = 1; i <= size; ++i) {
