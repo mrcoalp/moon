@@ -1,6 +1,6 @@
 dist: bionic
 
-sudo: required
+os: linux
 
 language: cpp
 
