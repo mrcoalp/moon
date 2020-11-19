@@ -13,16 +13,16 @@ public:
 
     explicit Script(lua_State*) : m_prop(Moon::GetValue<int>()) {}
 
-    LUA_DECLARE_CLASS(Script)
+    MOON_DECLARE_CLASS(Script)
 
-    LUA_PROPERTY(m_prop, int)
+    MOON_PROPERTY(m_prop, int)
 
-    LUA_METHOD(Getter) {
+    MOON_METHOD(Getter) {
         Moon::PushValue(m_prop + Moon::GetValue<int>());
         return 1;
     }
 
-    LUA_METHOD(Setter) {
+    MOON_METHOD(Setter) {
         testClass = m_prop = Moon::GetValue<int>();
         return 0;
     }
@@ -33,26 +33,25 @@ private:
     int m_prop;
 };
 
-LUA_DEFINE_BINDING(Script, false)
-LUA_ADD_PROPERTY(m_prop)
-LUA_ADD_METHOD(Getter)
-LUA_ADD_METHOD(Setter);
+MOON_DEFINE_BINDING(Script, false)
+MOON_ADD_PROPERTY(m_prop)
+MOON_ADD_METHOD(Getter)
+MOON_ADD_METHOD(Setter);
 
 std::string testCPPFunction;
-LUA_METHOD(cppFunction) {
+MOON_METHOD(cppFunction) {
     testCPPFunction = Moon::GetValue<std::string>();
     return 0;
 }
 
 bool test_call_cpp_function_from_lua() {
     Moon::RegisterFunction("cppFunction", cppFunction);
-    Moon::LoadFile("scripts/cppfunctions.lua");
+    Moon::RunCode(R"(cppFunction("passed"))");
     return testCPPFunction == "passed";
 }
 
 bool test_call_lua_function_pass_binding_object_modify_inside_lua() {
     Script o(20);
-    Moon::RegisterClass<Script>();
     Moon::LoadFile("scripts/luafunctions.lua");
     if (!Moon::CallFunction("Object", &o)) {
         return false;
@@ -92,7 +91,7 @@ bool test_call_lua_function_pass_multiple_params_get_vector() {
 }
 
 bool test_call_lua_function_get_anonymous_function_and_call_it() {
-    moon_types::LuaFunction fun;
+    moon::LuaFunction fun;
     Moon::RegisterFunction("cppFunction", cppFunction);
     Moon::LoadFile("scripts/luafunctions.lua");
     if (!Moon::CallFunction(fun, "TestCallback")) {
@@ -106,24 +105,23 @@ bool test_call_lua_function_get_anonymous_function_and_call_it() {
 }
 
 bool test_cpp_class_bind_lua() {
-    Moon::RegisterClass<Script>();
     Moon::LoadFile("scripts/cppclass.lua");
     return testClass == 40;
 }
 
 bool test_get_global_lua_var_from_cpp() {
     Moon::LoadFile("scripts/luavariables.lua");
-    const std::string s = Moon::GetGlobalVariable<std::string>("string");
+    const auto s = Moon::GetGlobalVariable<std::string>("string");
     const bool b = Moon::GetGlobalVariable<bool>("bool");
     const int i = Moon::GetGlobalVariable<int>("int");
-    const float f = Moon::GetGlobalVariable<float>("float");
-    const double d = Moon::GetGlobalVariable<double>("double");
+    const auto f = Moon::GetGlobalVariable<float>("float");
+    const auto d = Moon::GetGlobalVariable<double>("double");
     return s == "passed" && b && i == -1 && f == 12.6f && d == 3.14;
 }
 
 bool test_lua_run_code() {
     const bool status = Moon::RunCode("a = 'passed'");
-    const std::string s = Moon::GetGlobalVariable<std::string>("a");
+    const auto s = Moon::GetGlobalVariable<std::string>("a");
     return status && s == "passed";
 }
 
@@ -131,7 +129,7 @@ std::string dataStored;
 
 bool test_get_dynamic_map_from_lua() {
     Moon::LoadFile("scripts/luafunctions.lua");
-    moon_types::LuaDynamicMap map;
+    moon::LuaDynamicMap map;
     if (!Moon::CallFunction(map, "GetMap")) {
         return false;
     }

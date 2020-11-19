@@ -1,6 +1,5 @@
 function OnUpdate(table, index)
-    local s = table[index]
-    return s
+    return table[index]
 end
 
 function Maths(a, b, c)
@@ -13,8 +12,7 @@ function Object(object)
 end
 
 function VecTest(a, b, c)
-    local t = { a, b, c }
-    return t
+    return { a, b, c }
 end
 
 function TestCallback()
