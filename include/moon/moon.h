@@ -63,15 +63,11 @@ enum class LuaType {
     Thread = LUA_TTHREAD
 };
 
-/**
- * @brief Stores a Lua function in a table and saves its index. It can then be used to call that function.
- * When not needed, reference must be manually unloaded.
- */
-class LuaFunction {
+class LuaRef {
 public:
-    LuaFunction() = default;
-
-    LuaFunction(lua_State* L, int index) : m_state(L) { Load(index); }
+    LuaRef() = default;
+    explicit LuaRef(lua_State* L) : m_state(L) {}
+    LuaRef(lua_State* L, int index) : m_state(L) { Load(index); }
 
     /**
      * @brief Checks if key is set, and actions are allowed.
@@ -79,22 +75,76 @@ public:
      * @return true Valid actions, key is set.
      * @return false Invalid actions, key is not set.
      */
-    [[nodiscard]] inline bool IsLoaded() const { return m_key != -1; }
+    [[nodiscard]] inline bool IsLoaded() const { return m_key != -1 && m_state != nullptr; }
 
     /**
-     * @brief Creates function reference in lua metatable and saves its key.
+     * @brief Getter for the Lua state.
      *
-     * @param index Index, in stack, of function to load.
-     * @return true Function was successfully loaded.
-     * @return false Function could not be loaded.
+     * @return Lua state pointer.
+     */
+    [[nodiscard]] inline lua_State* GetState() const { return m_state; }
+
+    /**
+     * @brief Getter for the type of stored ref. Returns null if no reference was created.
+     *
+     * @return Type of ref stored.
+     */
+    [[nodiscard]] LuaType GetType() const {
+        if (!IsLoaded()) {
+            return LuaType::Null;
+        }
+        Push();
+        auto type = static_cast<LuaType>(lua_type(m_state, -1));
+        lua_pop(m_state, 1);
+        return type;
+    }
+
+    /**
+     * @brief Sets Lua state.
+     *
+     * @param L Lua state to set.
+     */
+    inline void SetState(lua_State* L) { m_state = L; }
+
+    /**
+     * @brief Loads reference.
+     *
+     * @param index Index of stack to create ref.
+     * @return Whether or not the reference was loaded.
      */
     bool Load(int index) {
+        if (m_state == nullptr) {
+            return false;
+        }
+        Unload();  // Unload previous value, if any
         lua_pushvalue(m_state, index);
         luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
         lua_pushvalue(m_state, -2);
-        if (lua_isfunction(m_state, -1)) {
-            m_key = luaL_ref(m_state, -2);
+        m_key = luaL_ref(m_state, -2);
+        lua_pop(m_state, 2);
+        return IsLoaded();
+    }
+
+    /**
+     * @brief Loads reference if type is equal to type check.
+     *
+     * @param index Index of stack to create ref.
+     * @param typeCheck Type of reference to check.
+     * @return Whether or not the reference was loaded.
+     */
+    bool Load(int index, LuaType typeCheck) {
+        if (m_state == nullptr) {
+            return false;
         }
+        Unload();  // Unload previous value, if any
+        lua_pushvalue(m_state, index);
+        luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
+        lua_pushvalue(m_state, -2);
+        if (static_cast<LuaType>(lua_type(m_state, -1)) != typeCheck) {
+            lua_pop(m_state, 3);
+            return false;
+        }
+        m_key = luaL_ref(m_state, -2);
         lua_pop(m_state, 2);
         return IsLoaded();
     }
@@ -126,25 +176,6 @@ public:
         lua_remove(m_state, -2);
     }
 
-    /**
-     * @brief Calls saved lua function.
-     *
-     * @return true Function called with success.
-     * @return false Function call returned errors or action is not valid.
-     */
-    bool Call() {
-        if (IsLoaded()) {
-            luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
-            lua_rawgeti(m_state, -1, m_key);
-            int status = lua_pcall(m_state, 0, 0, 0);
-            lua_pop(m_state, 1);
-            return status == LUA_OK;
-        }
-        return false;
-    }
-
-    bool operator()() { return Call(); }
-
 private:
     /**
      * @brief Key to later retrieve lua function.
@@ -158,69 +189,83 @@ private:
 };
 
 /**
+ * @brief Stores a Lua function in a table and saves its index. It can then be used to call that function.
+ * When not needed, reference must be manually unloaded.
+ */
+class LuaFunction {
+public:
+    LuaFunction() = default;
+
+    LuaFunction(lua_State* L, int index) {
+        m_ref.SetState(L);
+        m_ref.Load(index, LuaType::Function);
+    }
+
+    /**
+     * @brief Push function to stack.
+     */
+    void Push() const { m_ref.Push(); }
+
+    /**
+     * @brief Unloads reference from lua metatable.
+     */
+    void Unload() { m_ref.Unload(); }
+
+    /**
+     * @brief Calls saved lua function.
+     *
+     * @return true Function called with success.
+     * @return false Function call returned errors or action is not valid.
+     */
+    bool Call() {
+        if (m_ref.IsLoaded()) {
+            m_ref.Push();
+            auto* state = m_ref.GetState();
+            int status = lua_pcall(state, 0, 0, 0);
+            lua_pop(state, 1);
+            return status == LUA_OK;
+        }
+        return false;
+    }
+
+    bool operator()() { return Call(); }
+
+private:
+    /**
+     * @brief Reference that handles function storage.
+     */
+    LuaRef m_ref;
+};
+
+/**
  * @brief Stores a ref to a lua table.
  */
 class LuaDynamicMap {
 public:
     LuaDynamicMap() = default;
 
-    explicit LuaDynamicMap(lua_State* L) : m_state(L) {}
+    explicit LuaDynamicMap(lua_State* L) { m_ref.SetState(L); }
 
-    LuaDynamicMap(lua_State* L, int index) : m_state(L) {
-        lua_pushvalue(m_state, index);
-        luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
-        lua_pushvalue(m_state, -2);
-        if (lua_istable(m_state, -1)) {
-            m_key = luaL_ref(m_state, -2);
-        }
-        lua_pop(m_state, 2);
+    LuaDynamicMap(lua_State* L, int index) {
+        m_ref.SetState(L);
+        m_ref.Load(index, LuaType::Table);
     }
 
     /**
-     * @brief Checks if key is set, and actions are allowed.
-     *
-     * @return true Valid actions, key is set.
-     * @return false Invalid actions, key is not set.
+     * @brief Push table to stack.
      */
-    [[nodiscard]] inline bool IsLoaded() const { return m_key != -1; }
+    void Push() const { m_ref.Push(); }
 
     /**
-     * @brief Unloads reference from lua metatable and resets key.
+     * @brief Unloads reference from lua metatable.
      */
-    void Unload() {
-        if (IsLoaded()) {
-            luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
-            luaL_unref(m_state, -1, m_key);
-            lua_pop(m_state, 1);
-            m_key = -1;
-        }
-    }
-
-    /**
-     * @brief Push value to stack.
-     */
-    void Push() const {
-        if (!IsLoaded()) {
-            if (m_state != nullptr) {
-                lua_pushnil(m_state);
-            }
-            return;
-        }
-        luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
-        lua_rawgeti(m_state, -1, m_key);
-        lua_remove(m_state, -2);
-    }
+    void Unload() { m_ref.Unload(); }
 
 private:
     /**
-     * @brief Key to later retrieve lua function.
+     * @brief Reference that handles table storage.
      */
-    int m_key{-1};
-
-    /**
-     * @brief Lua state.
-     */
-    lua_State* m_state{nullptr};
+    LuaRef m_ref;
 };
 
 /**
@@ -562,12 +607,12 @@ public:
 
     static inline moon::LuaFunction GetValue(moon::MarshallingType<moon::LuaFunction>, lua_State* L, int index) {
         ensure_type(lua_isfunction(L, index));
-        return moon::LuaFunction(L, index);
+        return {L, index};
     }
 
     static inline moon::LuaDynamicMap GetValue(moon::MarshallingType<moon::LuaDynamicMap>, lua_State* L, int index) {
         ensure_type(lua_istable(L, index));
-        return moon::LuaDynamicMap(L, index);
+        return {L, index};
     }
 
     template <typename R>
