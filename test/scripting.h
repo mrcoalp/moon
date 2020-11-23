@@ -1,6 +1,6 @@
 #pragma once
 
-#include "moon.h"
+#include "moon/moon.h"
 
 int testClass = -1;
 #ifdef RegisterClass
