@@ -17,14 +17,14 @@
     static bool GC;                \
     static moon::Binding<_class> Binding;
 
-#define MOON_PROPERTY(_property, _type)      \
-    int Get_##_property(lua_State* L) {      \
-        Moon::PushValue(_property);          \
-        return 1;                            \
-    }                                        \
-    int Set_##_property(lua_State* L) {      \
-        _property = Moon::GetValue<_type>(); \
-        return 0;                            \
+#define MOON_PROPERTY(_property)                           \
+    int Get_##_property(lua_State* L) {                    \
+        Moon::PushValue(_property);                        \
+        return 1;                                          \
+    }                                                      \
+    int Set_##_property(lua_State* L) {                    \
+        _property = Moon::GetValue<decltype(_property)>(); \
+        return 0;                                          \
     }
 
 #define MOON_METHOD(_name) int _name(lua_State* L)

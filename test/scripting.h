@@ -15,7 +15,7 @@ public:
 
     MOON_DECLARE_CLASS(Script)
 
-    MOON_PROPERTY(m_prop, int)
+    MOON_PROPERTY(m_prop)
 
     MOON_METHOD(Getter) {
         Moon::PushValue(m_prop + Moon::GetValue<int>());
