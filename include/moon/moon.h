@@ -228,7 +228,33 @@ public:
         return false;
     }
 
+    /**
+     * @brief Calls saved lua function with arguments.
+     *
+     * @tparam Args Arguments type pack.
+     * @param args Arguments to push to lua function.
+     * @return true Function called with success.
+     * @return false Function call returned errors or action is not valid.
+     */
+    template <typename... Args>
+    bool Call(Args&&... args) {
+        if (m_ref.IsLoaded()) {
+            m_ref.Push();
+            Moon::PushValues(std::forward<Args>(args)...);
+            auto* state = m_ref.GetState();
+            int status = lua_pcall(state, sizeof...(Args), 0, 0);
+            lua_pop(state, 1);
+            return status == LUA_OK;
+        }
+        return false;
+    }
+
     bool operator()() { return Call(); }
+
+    template <typename... Args>
+    bool operator()(Args&&... args) {
+        return Call(std::forward<Args>(args)...);
+    }
 
 private:
     /**
