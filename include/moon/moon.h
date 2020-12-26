@@ -701,6 +701,8 @@ public:
 
     static void PushValue(lua_State* L, void* value) { lua_pushlightuserdata(L, value); }
 
+    static void PushValue(lua_State*, const moon::LuaRef& value) { value.Push(); }
+
     static void PushValue(lua_State*, const moon::LuaFunction& value) { value.Push(); }
 
     static void PushValue(lua_State*, const moon::LuaDynamicMap& value) { value.Push(); }
@@ -744,8 +746,6 @@ public:
         luaL_getmetatable(L, Class::Binding.GetName());
         lua_setmetatable(L, -2);
     }
-
-    static void PushNull(lua_State* L) { lua_pushnil(L); }
 
 private:
     static void ensure_type(int check) {
@@ -1011,6 +1011,18 @@ public:
     static void PushNull() { lua_pushnil(s_state); }
 
     /**
+     * @brief Pushes a new empty table/map to stack.
+     */
+    static void PushTable() { lua_newtable(s_state); }
+
+    /**
+     * @brief Pops from stack provided nr of elements.
+     *
+     * @param nrOfValues Quantity of elements to pop from stack
+     */
+    static void Pop(int nrOfElements = 1) { lua_pop(s_state, nrOfElements); }
+
+    /**
      * @brief Registers and exposes C++ class to Lua.
      *
      * @tparam T Class to be registered.
@@ -1240,6 +1252,26 @@ public:
     static void CleanGlobalVariable(const char* name) {
         PushNull();
         SetGlobalVariable(name);
+    }
+
+    /**
+     * @brief Creates and stores a new ref of element at provided index.
+     *
+     * @param index Index of element to create ref. Defaults to top of stack.
+     * @return A new LuaRef.
+     */
+    static moon::LuaRef CreateRef(int index = -1) { return {s_state, index}; }
+
+    /**
+     * @brief Creates a new empty dynamic map and stores it as a ref.
+     *
+     * @return Empty LuaDynamicMap
+     */
+    static moon::LuaDynamicMap CreateDynamicMap() {
+        PushTable();
+        moon::LuaDynamicMap map(s_state, -1);
+        Pop();
+        return map;
     }
 
 private:

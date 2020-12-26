@@ -42,3 +42,7 @@ end
 function GetMapValue(map)
     return map.w.g
 end
+
+function AddValueToMap(map)
+    map.w = { g = true }
+end

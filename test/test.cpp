@@ -12,17 +12,19 @@
 
 using Test = std::function<bool()>;
 static std::map<const char*, Test> tests = {
-    {"test_call_cpp_function_from_lua", test_call_cpp_function_from_lua},
-    {"test_call_lua_function_pass_binding_object_modify_inside_lua", test_call_lua_function_pass_binding_object_modify_inside_lua},
-    {"test_call_lua_function_pass_vector_get_string", test_call_lua_function_pass_vector_get_string},
-    {"test_call_lua_function_pass_multiple_params_get_int", test_call_lua_function_pass_multiple_params_get_int},
-    {"test_call_lua_function_pass_multiple_params_get_vector", test_call_lua_function_pass_multiple_params_get_vector},
-    {"test_call_lua_function_get_anonymous_function_and_call_it_no_args", test_call_lua_function_get_anonymous_function_and_call_it_no_args},
-    {"test_call_lua_function_get_anonymous_function_and_call_it_with_args", test_call_lua_function_get_anonymous_function_and_call_it_with_args},
-    {"test_cpp_class_bind_lua", test_cpp_class_bind_lua},
-    {"test_get_global_lua_var_from_cpp", test_get_global_lua_var_from_cpp},
-    {"test_lua_run_code", test_lua_run_code},
-    {"test_get_dynamic_map_from_lua", test_get_dynamic_map_from_lua}};
+    {"call_cpp_function_from_lua", call_cpp_function_from_lua},
+    {"call_lua_function_pass_binding_object_modify_inside_lua", call_lua_function_pass_binding_object_modify_inside_lua},
+    {"call_lua_function_pass_vector_get_string", call_lua_function_pass_vector_get_string},
+    {"call_lua_function_pass_multiple_params_get_int", call_lua_function_pass_multiple_params_get_int},
+    {"call_lua_function_pass_multiple_params_get_vector", call_lua_function_pass_multiple_params_get_vector},
+    {"call_lua_function_get_anonymous_function_and_call_it_no_args", call_lua_function_get_anonymous_function_and_call_it_no_args},
+    {"call_lua_function_get_anonymous_function_and_call_it_with_args", call_lua_function_get_anonymous_function_and_call_it_with_args},
+    {"cpp_class_bind_lua", cpp_class_bind_lua},
+    {"get_global_lua_var_from_cpp", get_global_lua_var_from_cpp},
+    {"lua_run_code", lua_run_code},
+    {"get_dynamic_map_from_lua", get_dynamic_map_from_lua},
+    {"create_object_ref_and_use_it", create_object_ref_and_use_it},
+    {"create_empty_dynamic_map_in_lua", create_empty_dynamic_map_in_lua}};
 
 int RunTests() {
     const int nrOfTests = (int)tests.size();
