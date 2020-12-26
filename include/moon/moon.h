@@ -214,6 +214,14 @@ public:
     void Unload() { m_ref.Unload(); }
 
     /**
+     * @brief Checks if ref is loaded.
+     *
+     * @return true Ref is loaded.
+     * @return false Ref is not loaded.
+     */
+    [[nodiscard]] inline bool IsLoaded() const { return m_ref.IsLoaded(); }
+
+    /**
      * @brief Calls saved lua function.
      *
      * @return true Function called with success.
@@ -224,7 +232,6 @@ public:
             m_ref.Push();
             auto* state = m_ref.GetState();
             int status = lua_pcall(state, 0, 0, 0);
-            lua_pop(state, 1);
             return status == LUA_OK;
         }
         return false;
@@ -267,6 +274,14 @@ public:
      * @brief Unloads reference from lua metatable.
      */
     void Unload() { m_ref.Unload(); }
+
+    /**
+     * @brief Checks if ref is loaded.
+     *
+     * @return true Ref is loaded.
+     * @return false Ref is not loaded.
+     */
+    [[nodiscard]] inline bool IsLoaded() const { return m_ref.IsLoaded(); }
 
 private:
     /**
@@ -1205,10 +1220,26 @@ public:
             PushValues(std::forward<Args>(args)...);
             auto* state = function.m_ref.GetState();
             int status = lua_pcall(state, sizeof...(Args), 0, 0);
-            lua_pop(state, 1);
             return status == LUA_OK;
         }
         return false;
+    }
+
+    /**
+     * @brief Sets top of stack as a global variable.
+     *
+     * @param name Name of the variable to set.
+     */
+    static void SetGlobalVariable(const char* name) { lua_setglobal(s_state, name); }
+
+    /**
+     * @brief Cleans/nulls a global variable.
+     *
+     * @param name Variable to clean.
+     */
+    static void CleanGlobalVariable(const char* name) {
+        PushNull();
+        SetGlobalVariable(name);
     }
 
 private:
