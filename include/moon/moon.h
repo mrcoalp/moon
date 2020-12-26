@@ -40,6 +40,8 @@
 
 #define MOON_ADD_PROPERTY_CUSTOM(_prop, _getter, _setter) .AddProperty({#_prop, &BindingType::_getter, &BindingType::_setter})
 
+class Moon;  // Forward declaration to use as friend class
+
 namespace moon {
 constexpr const char* LUA_REF_HOLDER_META_NAME{"LuaRefHolder"};
 
@@ -217,7 +219,7 @@ public:
      * @return true Function called with success.
      * @return false Function call returned errors or action is not valid.
      */
-    bool Call() {
+    bool Call() const {
         if (m_ref.IsLoaded()) {
             m_ref.Push();
             auto* state = m_ref.GetState();
@@ -228,39 +230,18 @@ public:
         return false;
     }
 
-    /**
-     * @brief Calls saved lua function with arguments.
-     *
-     * @tparam Args Arguments type pack.
-     * @param args Arguments to push to lua function.
-     * @return true Function called with success.
-     * @return false Function call returned errors or action is not valid.
-     */
-    template <typename... Args>
-    bool Call(Args&&... args) {
-        if (m_ref.IsLoaded()) {
-            m_ref.Push();
-            Moon::PushValues(std::forward<Args>(args)...);
-            auto* state = m_ref.GetState();
-            int status = lua_pcall(state, sizeof...(Args), 0, 0);
-            lua_pop(state, 1);
-            return status == LUA_OK;
-        }
-        return false;
-    }
-
-    bool operator()() { return Call(); }
-
-    template <typename... Args>
-    bool operator()(Args&&... args) {
-        return Call(std::forward<Args>(args)...);
-    }
+    bool operator()() const { return Call(); }
 
 private:
     /**
      * @brief Reference that handles function storage.
      */
     LuaRef m_ref;
+
+    /**
+     * @brief Befriend Moon class
+     */
+    friend class ::Moon;
 };
 
 /**
@@ -1197,6 +1178,37 @@ public:
         lValue = GetValue<T>(-1);
         lua_pop(s_state, 1);
         return true;
+    }
+
+    /**
+     * @brief Calls a LuaFunction ref stored in registry.
+     *
+     * @param function LuaFunction to call.
+     * @return true Function successfully called.
+     * @return false Unable to call function.
+     */
+    static bool LuaFunctionCall(const moon::LuaFunction& function) { return function(); }
+
+    /**
+     * @brief Calls a LuaFunction ref stored in registry, with arguments.
+     *
+     * @tparam Args Arguments types.
+     * @param function LuaFunction to call.
+     * @param args Arguments to push to function.
+     * @return true Function successfully called.
+     * @return false Unable to call function.
+     */
+    template <typename... Args>
+    static bool LuaFunctionCall(const moon::LuaFunction& function, Args&&... args) {
+        if (function.m_ref.IsLoaded()) {
+            function.m_ref.Push();
+            PushValues(std::forward<Args>(args)...);
+            auto* state = function.m_ref.GetState();
+            int status = lua_pcall(state, sizeof...(Args), 0, 0);
+            lua_pop(state, 1);
+            return status == LUA_OK;
+        }
+        return false;
     }
 
 private:

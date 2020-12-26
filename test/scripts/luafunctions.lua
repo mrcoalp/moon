@@ -21,6 +21,12 @@ function TestCallback()
     end
 end
 
+function TestCallbackArgs()
+    return function(text)
+        cppFunction(text)
+    end
+end
+
 function GetMap()
     return {
         x = 2,

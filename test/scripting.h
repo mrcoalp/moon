@@ -90,7 +90,7 @@ bool test_call_lua_function_pass_multiple_params_get_vector() {
     return vecRet.size() == 3 && vecRet[1] == 3.14;
 }
 
-bool test_call_lua_function_get_anonymous_function_and_call_it() {
+bool test_call_lua_function_get_anonymous_function_and_call_it_no_args() {
     moon::LuaFunction fun;
     Moon::RegisterFunction("cppFunction", cppFunction);
     Moon::LoadFile("scripts/luafunctions.lua");
@@ -98,6 +98,20 @@ bool test_call_lua_function_get_anonymous_function_and_call_it() {
         return false;
     }
     if (!fun()) {
+        return false;
+    }
+    fun.Unload();
+    return testCPPFunction == "passed_again";
+}
+
+bool test_call_lua_function_get_anonymous_function_and_call_it_with_args() {
+    moon::LuaFunction fun;
+    Moon::RegisterFunction("cppFunction", cppFunction);
+    Moon::LoadFile("scripts/luafunctions.lua");
+    if (!Moon::CallFunction(fun, "TestCallbackArgs")) {
+        return false;
+    }
+    if (!Moon::LuaFunctionCall(fun, "passed_again")) {
         return false;
     }
     fun.Unload();
