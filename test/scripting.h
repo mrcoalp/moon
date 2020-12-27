@@ -202,7 +202,7 @@ bool get_c_object_from_lua() {
     int top = Moon::GetTop();
     Script o(2);
     Moon::PushValue(&o);
-    auto a = *Moon::GetValue<Script*>(-1);
+    auto a = Moon::GetValue<Script>(-1);
     Moon::Pop();
     return top == Moon::GetTop() && a.GetProp() == 2;
 }

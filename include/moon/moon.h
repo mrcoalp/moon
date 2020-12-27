@@ -288,45 +288,6 @@ private:
     LuaRef m_ref;
 };
 
-template <typename T>
-struct Number : std::false_type {};
-template <>
-struct Number<int> : std::true_type {};
-template <>
-struct Number<unsigned> : std::true_type {};
-template <>
-struct Number<float> : std::true_type {};
-template <>
-struct Number<double> : std::true_type {};
-template <typename T>
-using IsNumber = std::enable_if_t<Number<T>::value, T>;
-template <typename T>
-using IsBool = std::enable_if_t<std::is_same_v<T, bool>, T>;
-template <typename T>
-using IsString = std::enable_if_t<std::is_same_v<T, std::string>, T>;
-template <typename T>
-using IsConstChar = std::enable_if_t<std::is_same_v<T, const char*>, T>;
-template <typename T>
-using IsLuaFunction = std::enable_if_t<std::is_same_v<T, LuaFunction>, T>;
-template <typename T>
-using IsLuaDynamicMap = std::enable_if_t<std::is_same_v<T, LuaDynamicMap>, T>;
-template <typename T>
-using IsPointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, T>;
-template <typename T>
-struct Vector : std::false_type {};
-template <typename T>
-struct Vector<std::vector<T>> : std::true_type {};
-template <typename T>
-using IsVector = std::enable_if_t<Vector<T>::value, T>;
-template <typename T>
-struct Map : std::false_type {};
-template <typename T>
-struct Map<LuaMap<T>> : std::true_type {};
-template <typename T>
-struct Map<std::map<std::string, T>> : std::true_type {};
-template <typename T>
-using IsMap = std::enable_if_t<Map<T>::value, T>;
-
 /**
  * @brief Converts C++ class to Lua metatable.
  * LunaFive modded - http://lua-users.org/wiki/LunaFive
@@ -654,6 +615,47 @@ private:
     std::vector<LuaProperty> m_properties;
 };
 
+template <typename T>
+struct Number : std::false_type {};
+template <>
+struct Number<int> : std::true_type {};
+template <>
+struct Number<unsigned> : std::true_type {};
+template <>
+struct Number<float> : std::true_type {};
+template <>
+struct Number<double> : std::true_type {};
+template <typename T>
+using IsNumber = std::enable_if_t<Number<T>::value, T>;
+template <typename T>
+using IsBool = std::enable_if_t<std::is_same_v<T, bool>, T>;
+template <typename T>
+using IsString = std::enable_if_t<std::is_same_v<T, std::string>, T>;
+template <typename T>
+using IsCString = std::enable_if_t<std::is_same_v<T, const char*>, T>;
+template <typename T>
+using IsLuaFunction = std::enable_if_t<std::is_same_v<T, LuaFunction>, T>;
+template <typename T>
+using IsLuaDynamicMap = std::enable_if_t<std::is_same_v<T, LuaDynamicMap>, T>;
+template <typename T>
+using IsPointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, T>;
+template <typename T>
+struct Vector : std::false_type {};
+template <typename T>
+struct Vector<std::vector<T>> : std::true_type {};
+template <typename T>
+using IsVector = std::enable_if_t<Vector<T>::value, T>;
+template <typename T>
+struct Map : std::false_type {};
+template <typename T>
+struct Map<LuaMap<T>> : std::true_type {};
+template <typename T>
+struct Map<std::map<std::string, T>> : std::true_type {};
+template <typename T>
+using IsMap = std::enable_if_t<Map<T>::value, T>;
+template <typename T>
+using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, T>;
+
 class Marshalling {
 public:
     template <typename R>
@@ -677,7 +679,7 @@ public:
     }
 
     template <typename R>
-    static IsConstChar<R> GetValue(lua_State* L, int index) {
+    static IsCString<R> GetValue(lua_State* L, int index) {
         assertType(lua_isstring(L, index));
         return lua_tostring(L, index);
     }
@@ -698,6 +700,12 @@ public:
     static IsPointer<R> GetValue(lua_State* L, int index) {
         assertType(lua_isuserdata(L, index));
         return *static_cast<R*>(lua_touserdata(L, index));
+    }
+
+    template <typename R>
+    static IsBinding<R> GetValue(lua_State* L, int index) {
+        assertType(lua_isuserdata(L, index));
+        return *GetValue<R*>(L, index);
     }
 
     template <typename R>
