@@ -11,7 +11,7 @@
 #define ANSI_COLOR_RESET "\x1b[0m"
 
 using Test = std::function<bool()>;
-static std::map<const char*, Test> tests = {
+static std::unordered_map<const char*, Test> tests = {
     {"call_cpp_function_from_lua", call_cpp_function_from_lua},
     {"call_lua_function_pass_binding_object_modify_inside_lua", call_lua_function_pass_binding_object_modify_inside_lua},
     {"call_lua_function_pass_vector_get_string", call_lua_function_pass_vector_get_string},
@@ -20,12 +20,13 @@ static std::map<const char*, Test> tests = {
     {"call_lua_function_get_anonymous_function_and_call_it_no_args", call_lua_function_get_anonymous_function_and_call_it_no_args},
     {"call_lua_function_get_anonymous_function_and_call_it_with_args", call_lua_function_get_anonymous_function_and_call_it_with_args},
     {"cpp_class_bind_lua", cpp_class_bind_lua},
-    {"get_global_lua_var_from_cpp", get_global_lua_var_from_cpp},
     {"lua_run_code", lua_run_code},
     {"get_dynamic_map_from_lua", get_dynamic_map_from_lua},
     {"create_object_ref_and_use_it", create_object_ref_and_use_it},
     {"create_empty_dynamic_map_in_lua_with_expected_fail", create_empty_dynamic_map_in_lua_with_expected_fail},
-    {"complex_data_containers", complex_data_containers}};
+    {"get_global_vars_from_lua", get_global_vars_from_lua},
+    {"get_c_object_from_lua", get_c_object_from_lua},
+    {"get_complex_data_containers_from_lua", get_complex_data_containers_from_lua}};
 
 int RunTests() {
     const int nrOfTests = (int)tests.size();

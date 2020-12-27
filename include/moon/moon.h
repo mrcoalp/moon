@@ -10,6 +10,7 @@
 #include <map>
 #include <sstream>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -49,9 +50,6 @@ using LuaCFunction = int (*)(lua_State*);
 
 template <typename T>
 using LuaMap = std::unordered_map<std::string, T>;
-
-template <typename T>
-struct MarshallingType {};
 
 enum class LuaType {
     Null = LUA_TNIL,
@@ -289,6 +287,45 @@ private:
      */
     LuaRef m_ref;
 };
+
+template <typename T>
+struct Number : std::false_type {};
+template <>
+struct Number<int> : std::true_type {};
+template <>
+struct Number<unsigned> : std::true_type {};
+template <>
+struct Number<float> : std::true_type {};
+template <>
+struct Number<double> : std::true_type {};
+template <typename T>
+using IsNumber = std::enable_if_t<Number<T>::value, T>;
+template <typename T>
+using IsBool = std::enable_if_t<std::is_same_v<T, bool>, T>;
+template <typename T>
+using IsString = std::enable_if_t<std::is_same_v<T, std::string>, T>;
+template <typename T>
+using IsConstChar = std::enable_if_t<std::is_same_v<T, const char*>, T>;
+template <typename T>
+using IsLuaFunction = std::enable_if_t<std::is_same_v<T, LuaFunction>, T>;
+template <typename T>
+using IsLuaDynamicMap = std::enable_if_t<std::is_same_v<T, LuaDynamicMap>, T>;
+template <typename T>
+using IsPointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, T>;
+template <typename T>
+struct Vector : std::false_type {};
+template <typename T>
+struct Vector<std::vector<T>> : std::true_type {};
+template <typename T>
+using IsVector = std::enable_if_t<Vector<T>::value, T>;
+template <typename T>
+struct Map : std::false_type {};
+template <typename T>
+struct Map<LuaMap<T>> : std::true_type {};
+template <typename T>
+struct Map<std::map<std::string, T>> : std::true_type {};
+template <typename T>
+using IsMap = std::enable_if_t<Map<T>::value, T>;
 
 /**
  * @brief Converts C++ class to Lua metatable.
@@ -619,76 +656,56 @@ private:
 
 class Marshalling {
 public:
-    static inline int GetValue(moon::MarshallingType<int>, lua_State* L, int index) {
-        assertType(lua_isinteger(L, index));
-        return static_cast<int>(lua_tointeger(L, index));
-    }
-
-    static inline float GetValue(moon::MarshallingType<float>, lua_State* L, int index) {
+    template <typename R>
+    static IsNumber<R> GetValue(lua_State* L, int index) {
         assertType(lua_isnumber(L, index));
-        return static_cast<float>(lua_tonumber(L, index));
+        return static_cast<R>(lua_tonumber(L, index));
     }
 
-    static inline double GetValue(moon::MarshallingType<double>, lua_State* L, int index) {
-        assertType(lua_isnumber(L, index));
-        return static_cast<double>(lua_tonumber(L, index));
-    }
-
-    static inline bool GetValue(moon::MarshallingType<bool>, lua_State* L, int index) {
+    template <typename R>
+    static IsBool<R> GetValue(lua_State* L, int index) {
         assertType(lua_isboolean(L, index));
         return lua_toboolean(L, index) != 0;
     }
 
-    static inline unsigned GetValue(moon::MarshallingType<unsigned>, lua_State* L, int index) {
-        assertType(lua_isinteger(L, index));
-        return static_cast<unsigned>(lua_tointeger(L, index));
-    }
-
-    static inline std::string GetValue(moon::MarshallingType<std::string>, lua_State* L, int index) {
+    template <typename R>
+    static IsString<R> GetValue(lua_State* L, int index) {
         assertType(lua_isstring(L, index));
         size_t size;
         const char* buffer = lua_tolstring(L, index, &size);
-        return std::string{buffer, size};
+        return R{buffer, size};
     }
 
-    static inline const char* GetValue(moon::MarshallingType<const char*>, lua_State* L, int index) {
+    template <typename R>
+    static IsConstChar<R> GetValue(lua_State* L, int index) {
         assertType(lua_isstring(L, index));
         return lua_tostring(L, index);
     }
 
-    static inline void* GetValue(moon::MarshallingType<void*>, lua_State* L, int index) {
-        assertType(lua_isuserdata(L, index));
-        return lua_touserdata(L, index);
-    }
-
-    static inline moon::LuaFunction GetValue(moon::MarshallingType<moon::LuaFunction>, lua_State* L, int index) {
+    template <typename R>
+    static IsLuaFunction<R> GetValue(lua_State* L, int index) {
         assertType(lua_isfunction(L, index));
         return {L, index};
     }
 
-    static inline moon::LuaDynamicMap GetValue(moon::MarshallingType<moon::LuaDynamicMap>, lua_State* L, int index) {
+    template <typename R>
+    static IsLuaDynamicMap<R> GetValue(lua_State* L, int index) {
         assertType(lua_istable(L, index));
         return {L, index};
     }
 
     template <typename R>
-    static inline R* GetValue(moon::MarshallingType<R*>, lua_State* L, int index) {
+    static IsPointer<R> GetValue(lua_State* L, int index) {
         assertType(lua_isuserdata(L, index));
-        return *static_cast<R**>(lua_touserdata(L, index));
+        return *static_cast<R*>(lua_touserdata(L, index));
     }
 
     template <typename R>
-    static inline R GetValue(moon::MarshallingType<R>, lua_State* L, int index) {
-        assertType(lua_isuserdata(L, index));
-        return *GetValue(moon::MarshallingType<R*>{}, L, index);
-    }
-
-    template <typename T>
-    static std::vector<T> GetValue(moon::MarshallingType<std::vector<T>>, lua_State* L, int index) {
+    static IsVector<R> GetValue(lua_State* L, int index) {
         assertType(lua_istable(L, index));
         ensureValidIndexInRecursion(index, L);
         auto size = (size_t)lua_rawlen(L, index);
-        std::vector<T> vec;
+        R vec;
         vec.reserve(size);
         for (size_t i = 1; i <= size; ++i) {
             lua_pushinteger(L, i);
@@ -697,33 +714,20 @@ public:
                 lua_pop(L, 1);
                 break;
             }
-            vec.emplace_back(GetValue(moon::MarshallingType<T>{}, L, lua_gettop(L)));
+            vec.emplace_back(GetValue<typename R::value_type>(L, lua_gettop(L)));
             lua_pop(L, 1);
         }
         return vec;
     }
 
-    template <typename T>
-    [[nodiscard]] static moon::LuaMap<T> GetValue(moon::MarshallingType<moon::LuaMap<T>>, lua_State* L, int index) {
+    template <typename R>
+    static IsMap<R> GetValue(lua_State* L, int index) {
         assertType(lua_istable(L, index));
         ensureValidIndexInRecursion(index, L);
         lua_pushnil(L);
-        moon::LuaMap<T> map;
+        R map;
         while (lua_next(L, index) != 0) {
-            map.emplace(GetValue(moon::MarshallingType<std::string>{}, L, -2), GetValue(moon::MarshallingType<T>{}, L, lua_gettop(L)));
-            lua_pop(L, 1);
-        }
-        return map;
-    }
-
-    template <typename T>
-    [[nodiscard]] static std::map<std::string, T> GetValue(moon::MarshallingType<std::map<std::string, T>>, lua_State* L, int index) {
-        assertType(lua_istable(L, index));
-        ensureValidIndexInRecursion(index, L);
-        lua_pushnil(L);
-        std::map<std::string, T> map;
-        while (lua_next(L, index) != 0) {
-            map.emplace(GetValue(moon::MarshallingType<std::string>{}, L, -2), GetValue(moon::MarshallingType<T>{}, L, lua_gettop(L)));
+            map.emplace(GetValue<std::string>(L, -2), GetValue<typename R::mapped_type>(L, lua_gettop(L)));
             lua_pop(L, 1);
         }
         return map;
@@ -1006,7 +1010,7 @@ public:
     template <typename R>
     static inline R GetValue(const int index = 1) {
         try {
-            return moon::Marshalling::GetValue(moon::MarshallingType<R>{}, s_state, index);
+            return moon::Marshalling::GetValue<R>(s_state, index);
         } catch (const std::exception& e) {
             std::stringstream error;
             error << "An exception was caught by Moon: " << e.what();

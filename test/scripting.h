@@ -132,17 +132,6 @@ bool cpp_class_bind_lua() {
     return testClass == 40 && top == Moon::GetTop();
 }
 
-bool get_global_lua_var_from_cpp() {
-    int top = Moon::GetTop();
-    Moon::LoadFile("scripts/luavariables.lua");
-    const auto s = Moon::GetGlobalVariable<std::string>("string");
-    const bool b = Moon::GetGlobalVariable<bool>("bool");
-    const int i = Moon::GetGlobalVariable<int>("int");
-    const auto f = Moon::GetGlobalVariable<float>("float");
-    const auto d = Moon::GetGlobalVariable<double>("double");
-    return s == "passed" && b && i == -1 && f == 12.6f && d == 3.14 && top == Moon::GetTop();
-}
-
 bool lua_run_code() {
     int top = Moon::GetTop();
     const bool status = Moon::RunCode("a = 'passed'");
@@ -198,7 +187,27 @@ bool create_empty_dynamic_map_in_lua_with_expected_fail() {
     return expectedFail && value && top == Moon::GetTop();
 }
 
-bool complex_data_containers() {
+bool get_global_vars_from_lua() {
+    int top = Moon::GetTop();
+    Moon::LoadFile("scripts/luavariables.lua");
+    const auto s = Moon::GetGlobalVariable<std::string>("string");
+    const bool b = Moon::GetGlobalVariable<bool>("bool");
+    const int i = Moon::GetGlobalVariable<int>("int");
+    const auto f = Moon::GetGlobalVariable<float>("float");
+    const auto d = Moon::GetGlobalVariable<double>("double");
+    return s == "passed" && b && i == -1 && f == 12.6f && d == 3.14 && top == Moon::GetTop();
+}
+
+bool get_c_object_from_lua() {
+    int top = Moon::GetTop();
+    Script o(2);
+    Moon::PushValue(&o);
+    auto a = *Moon::GetValue<Script*>(-1);
+    Moon::Pop();
+    return top == Moon::GetTop() && a.GetProp() == 2;
+}
+
+bool get_complex_data_containers_from_lua() {
     moon::LuaMap<moon::LuaMap<bool>> map;
     moon::LuaMap<bool> nested_map;
     nested_map.emplace("first", true);
