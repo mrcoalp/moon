@@ -9,6 +9,8 @@ int testClass = -1;
 
 class Script {
 public:
+    Script() = default;
+
     explicit Script(int prop) : m_prop(prop) {}
 
     explicit Script(lua_State*) : m_prop(Moon::GetValue<int>()) {}
@@ -29,7 +31,6 @@ public:
 
     [[nodiscard]] inline int GetProp() const { return m_prop; }
 
-private:
     int m_prop;
 };
 
@@ -179,7 +180,7 @@ bool create_object_ref_and_use_it() {
     return testClass == 1 && top == Moon::GetTop();
 }
 
-bool create_empty_dynamic_map_in_lua() {
+bool create_empty_dynamic_map_in_lua_with_expected_fail() {
     int top = Moon::GetTop();
     Moon::LoadFile("scripts/luafunctions.lua");
     moon::LuaDynamicMap map;
@@ -195,4 +196,34 @@ bool create_empty_dynamic_map_in_lua() {
     }
     map.Unload();
     return expectedFail && value && top == Moon::GetTop();
+}
+
+bool complex_data_containers() {
+    moon::LuaMap<moon::LuaMap<bool>> map;
+    moon::LuaMap<bool> nested_map;
+    nested_map.emplace("first", true);
+    map.emplace("first", nested_map);
+    std::vector<std::vector<std::vector<double>>> vec;
+    vec.push_back({{2, 3.14, 4}, {4.6, 5, 6}});
+    vec.push_back({{6, 7, 8}, {8.1, 9, 10.10}});
+    std::vector<moon::LuaMap<std::vector<double>>> other_vec;
+    other_vec.push_back({{"first", {2, 3.14, 4}}, {"second", {4.6, 5, 6}}});
+    moon::LuaMap<std::vector<std::vector<std::vector<double>>>> other_map;
+    other_map.emplace("first", vec);
+    other_map.emplace("second", vec);
+    int top = Moon::GetTop();
+    Moon::PushValue(map);
+    Moon::PushValue(vec);
+    Moon::PushValue(other_vec);
+    Moon::PushValue(other_map);
+    auto a = Moon::GetValue<moon::LuaMap<moon::LuaMap<bool>>>(1);
+    auto b = Moon::GetValue<std::vector<std::vector<std::vector<double>>>>(-3);
+    auto c = Moon::GetValue<std::vector<moon::LuaMap<std::vector<double>>>>(-2);
+    auto d = Moon::GetValue<moon::LuaMap<std::vector<std::vector<std::vector<double>>>>>(Moon::GetTop());
+    if (top + 4 != Moon::GetTop()) {
+        Moon::Pop(4);
+        return false;
+    }
+    Moon::Pop(4);
+    return a.at("first").at("first") && b[0][0][1] == 3.14 && c[0].at("first")[2] == 4 && d.at("second")[1][1][2] == 10.10;
 }

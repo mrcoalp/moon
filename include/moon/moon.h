@@ -356,8 +356,9 @@ public:
     static void Register(lua_State* L, const char* nameSpace = nullptr) {
         if (nameSpace != nullptr && strlen(nameSpace) != 0u) {
             lua_getglobal(L, nameSpace);
-            if (lua_isnil(L, -1))  // Create namespace if not present
-            {
+            // Create namespace if not present
+            if (lua_isnil(L, -1)) {
+                lua_pop(L, 1);
                 lua_newtable(L);
                 lua_pushvalue(L, -1);  // Duplicate table pointer since setglobal pops the value
                 lua_setglobal(L, nameSpace);
@@ -408,6 +409,7 @@ public:
             lua_settable(L, metatable);
             ++i;
         }
+        lua_pop(L, 1);
     }
 
     /**
@@ -583,79 +585,119 @@ private:
     }
 };
 
+template <class BindableClass>
+class Binding {
+public:
+    using LuaFunction = typename LuaClass<BindableClass>::FunctionType;
+    using LuaProperty = typename LuaClass<BindableClass>::PropertyType;
+
+    explicit Binding(const char* name) : m_name(name) {}
+
+    ~Binding() = default;
+
+    [[nodiscard]] inline const char* GetName() const { return m_name; }
+
+    [[nodiscard]] inline const auto& GetMethods() const { return m_methods; }
+
+    [[nodiscard]] inline const auto& GetProperties() const { return m_properties; }
+
+    Binding& AddMethod(LuaFunction func) {
+        m_methods.push_back(func);
+        return *this;
+    }
+
+    Binding& AddProperty(LuaProperty prop) {
+        m_properties.push_back(prop);
+        return *this;
+    }
+
+private:
+    const char* m_name;
+    std::vector<LuaFunction> m_methods;
+    std::vector<LuaProperty> m_properties;
+};
+
 class Marshalling {
 public:
     static inline int GetValue(moon::MarshallingType<int>, lua_State* L, int index) {
-        ensure_type(lua_isinteger(L, index));
+        assertType(lua_isinteger(L, index));
         return static_cast<int>(lua_tointeger(L, index));
     }
 
     static inline float GetValue(moon::MarshallingType<float>, lua_State* L, int index) {
-        ensure_type(lua_isnumber(L, index));
+        assertType(lua_isnumber(L, index));
         return static_cast<float>(lua_tonumber(L, index));
     }
 
     static inline double GetValue(moon::MarshallingType<double>, lua_State* L, int index) {
-        ensure_type(lua_isnumber(L, index));
+        assertType(lua_isnumber(L, index));
         return static_cast<double>(lua_tonumber(L, index));
     }
 
     static inline bool GetValue(moon::MarshallingType<bool>, lua_State* L, int index) {
-        ensure_type(lua_isboolean(L, index));
+        assertType(lua_isboolean(L, index));
         return lua_toboolean(L, index) != 0;
     }
 
     static inline unsigned GetValue(moon::MarshallingType<unsigned>, lua_State* L, int index) {
-        ensure_type(lua_isinteger(L, index));
+        assertType(lua_isinteger(L, index));
         return static_cast<unsigned>(lua_tointeger(L, index));
     }
 
     static inline std::string GetValue(moon::MarshallingType<std::string>, lua_State* L, int index) {
-        ensure_type(lua_isstring(L, index));
+        assertType(lua_isstring(L, index));
         size_t size;
         const char* buffer = lua_tolstring(L, index, &size);
         return std::string{buffer, size};
     }
 
     static inline const char* GetValue(moon::MarshallingType<const char*>, lua_State* L, int index) {
-        ensure_type(lua_isstring(L, index));
+        assertType(lua_isstring(L, index));
         return lua_tostring(L, index);
     }
 
     static inline void* GetValue(moon::MarshallingType<void*>, lua_State* L, int index) {
-        ensure_type(lua_isuserdata(L, index));
+        assertType(lua_isuserdata(L, index));
         return lua_touserdata(L, index);
     }
 
     static inline moon::LuaFunction GetValue(moon::MarshallingType<moon::LuaFunction>, lua_State* L, int index) {
-        ensure_type(lua_isfunction(L, index));
+        assertType(lua_isfunction(L, index));
         return {L, index};
     }
 
     static inline moon::LuaDynamicMap GetValue(moon::MarshallingType<moon::LuaDynamicMap>, lua_State* L, int index) {
-        ensure_type(lua_istable(L, index));
+        assertType(lua_istable(L, index));
         return {L, index};
     }
 
     template <typename R>
+    static inline R* GetValue(moon::MarshallingType<R*>, lua_State* L, int index) {
+        assertType(lua_isuserdata(L, index));
+        return *static_cast<R**>(lua_touserdata(L, index));
+    }
+
+    template <typename R>
     static inline R GetValue(moon::MarshallingType<R>, lua_State* L, int index) {
-        ensure_type(lua_isuserdata(L, index));
-        return static_cast<R>(lua_touserdata(L, index));
+        assertType(lua_isuserdata(L, index));
+        return *GetValue(moon::MarshallingType<R*>{}, L, index);
     }
 
     template <typename T>
     static std::vector<T> GetValue(moon::MarshallingType<std::vector<T>>, lua_State* L, int index) {
-        ensure_type(lua_istable(L, index));
-        auto size = (size_t)lua_rawlen(L, -1);
+        assertType(lua_istable(L, index));
+        ensureValidIndexInRecursion(index, L);
+        auto size = (size_t)lua_rawlen(L, index);
         std::vector<T> vec;
         vec.reserve(size);
         for (size_t i = 1; i <= size; ++i) {
             lua_pushinteger(L, i);
-            lua_gettable(L, -2);
+            lua_gettable(L, index);
             if (lua_type(L, -1) == LUA_TNIL) {
+                lua_pop(L, 1);
                 break;
             }
-            vec.emplace_back(GetValue(moon::MarshallingType<T>{}, L, -1));
+            vec.emplace_back(GetValue(moon::MarshallingType<T>{}, L, lua_gettop(L)));
             lua_pop(L, 1);
         }
         return vec;
@@ -663,11 +705,12 @@ public:
 
     template <typename T>
     [[nodiscard]] static moon::LuaMap<T> GetValue(moon::MarshallingType<moon::LuaMap<T>>, lua_State* L, int index) {
-        ensure_type(lua_istable(L, index));
+        assertType(lua_istable(L, index));
+        ensureValidIndexInRecursion(index, L);
         lua_pushnil(L);
         moon::LuaMap<T> map;
-        while (lua_next(L, -2) != 0) {
-            map.emplace(GetValue(moon::MarshallingType<std::string>{}, L, -2), GetValue(moon::MarshallingType<T>{}, L, -1));
+        while (lua_next(L, index) != 0) {
+            map.emplace(GetValue(moon::MarshallingType<std::string>{}, L, -2), GetValue(moon::MarshallingType<T>{}, L, lua_gettop(L)));
             lua_pop(L, 1);
         }
         return map;
@@ -675,11 +718,12 @@ public:
 
     template <typename T>
     [[nodiscard]] static std::map<std::string, T> GetValue(moon::MarshallingType<std::map<std::string, T>>, lua_State* L, int index) {
-        ensure_type(lua_istable(L, index));
+        assertType(lua_istable(L, index));
+        ensureValidIndexInRecursion(index, L);
         lua_pushnil(L);
         std::map<std::string, T> map;
-        while (lua_next(L, -2) != 0) {
-            map.emplace(GetValue(moon::MarshallingType<std::string>{}, L, -2), GetValue(moon::MarshallingType<T>{}, L, -1));
+        while (lua_next(L, index) != 0) {
+            map.emplace(GetValue(moon::MarshallingType<std::string>{}, L, -2), GetValue(moon::MarshallingType<T>{}, L, lua_gettop(L)));
             lua_pop(L, 1);
         }
         return map;
@@ -700,6 +744,8 @@ public:
     static void PushValue(lua_State* L, const char* value) { lua_pushstring(L, value); }
 
     static void PushValue(lua_State* L, void* value) { lua_pushlightuserdata(L, value); }
+
+    static void PushValue(lua_State* L, moon::LuaCFunction value) { lua_pushcfunction(L, value); }
 
     static void PushValue(lua_State*, const moon::LuaRef& value) { value.Push(); }
 
@@ -748,43 +794,31 @@ public:
     }
 
 private:
-    static void ensure_type(int check) {
+    /**
+     * @brief Asserts the type of value.
+     *
+     * @param check Whether or not the type check was successful.
+     */
+    static void assertType(int check) {
         if (check != 1) {
             throw std::runtime_error("Lua type check failed!");
         }
     }
-};
 
-template <class BindableClass>
-class Binding {
-public:
-    using LuaFunction = typename LuaClass<BindableClass>::FunctionType;
-    using LuaProperty = typename LuaClass<BindableClass>::PropertyType;
-
-    explicit Binding(const char* name) : m_name(name) {}
-
-    ~Binding() = default;
-
-    [[nodiscard]] inline const char* GetName() const { return m_name; }
-
-    [[nodiscard]] inline const auto& GetMethods() const { return m_methods; }
-
-    [[nodiscard]] inline const auto& GetProperties() const { return m_properties; }
-
-    Binding& AddMethod(LuaFunction func) {
-        m_methods.push_back(func);
-        return *this;
+    /**
+     * @brief When using more complex data containers (like maps or vectors) recursion inside this can not be made with negative indexes.
+     * If we try to get, for example, a std::vector<std::vector<int>> and provide -1 as index, in the recursive call to get the value, we would always
+     * access the last value in the stack, which is not the right element (since we push indexes of the vector). We must, in this case, convert to the
+     * real index in the stack, by the right order.
+     *
+     * @param index Index to check and adapt if needed.
+     * @param L Lua state pointer.
+     */
+    static void ensureValidIndexInRecursion(int& index, lua_State* L) {
+        if (index < 0) {
+            index = lua_gettop(L) + index + 1;
+        }
     }
-
-    Binding& AddProperty(LuaProperty prop) {
-        m_properties.push_back(prop);
-        return *this;
-    }
-
-private:
-    const char* m_name;
-    std::vector<LuaFunction> m_methods;
-    std::vector<LuaProperty> m_properties;
 };
 }  // namespace moon
 
@@ -803,6 +837,7 @@ public:
         s_state = luaL_newstate();
         luaL_openlibs(s_state);
         luaL_newmetatable(s_state, moon::LUA_REF_HOLDER_META_NAME);
+        Pop();
     }
 
     /**
@@ -845,27 +880,79 @@ public:
      * @brief Returns a string containing all values current in the stack. Useful for debug purposes.
      */
     static std::string GetStackDump() {
-        int top = lua_gettop(s_state);
+        int top = GetTop();
         std::stringstream dump;
         dump << "***** LUA STACK *****" << std::endl;
         for (int i = 1; i <= top; ++i) {
-            int t = lua_type(s_state, i);
-            switch (t) {
-                case LUA_TSTRING:
-                    dump << GetValue<const char*>(i) << std::endl;
-                    break;
-                case LUA_TBOOLEAN:
-                    dump << std::boolalpha << GetValue<bool>(i) << std::endl;
-                    break;
-                case LUA_TNUMBER:
-                    dump << GetValue<double>(i) << std::endl;
-                    break;
-                default:  // NOTE(mpinto): Other values, print type
-                    dump << lua_typename(s_state, t) << std::endl;
-                    break;
-            }
+            int invertedIndex = top - i + 1;
+            dump << i << " (-" << invertedIndex << ") => " << StackElementToStringDump(i) << std::endl;
         }
         return dump.str();
+    }
+
+    /**
+     * @brief String of element in stack value or type (if value can not be printed in C).
+     *
+     * @param index Index of element to get value or type.
+     * @return String containing value of element or type.
+     */
+    static std::string StackElementToStringDump(int index) {
+        static auto printArray = [](int index, size_t size) -> std::string {
+            std::stringstream dump;
+            dump << "[";
+            for (size_t i = 1; i <= size; ++i) {
+                lua_pushinteger(s_state, i);
+                lua_gettable(s_state, index);
+                int top = GetTop();
+                if (lua_type(s_state, top) == LUA_TNIL) {
+                    break;
+                }
+                dump << StackElementToStringDump(top);
+                if (i + 1 <= size) {
+                    dump << ", ";
+                }
+                Pop();
+            }
+            dump << "]";
+            return dump.str();
+        };
+
+        static auto printMap = [](int index) -> std::string {
+            std::stringstream dump;
+            dump << "{";
+            PushNull();
+            bool first = true;
+            while (lua_next(s_state, index) != 0) {
+                if (!first) {
+                    dump << ", ";
+                }
+                first = false;
+                dump << "\"" << GetValue<std::string>(-2) << "\": " << StackElementToStringDump(GetTop());
+                Pop();
+            }
+            dump << "}";
+            return dump.str();
+        };
+
+        moon::LuaType type = GetValueType(index);
+        switch (type) {
+            case moon::LuaType::Boolean: {
+                return GetValue<bool>(index) ? "true" : "false";
+            }
+            case moon::LuaType::Number: {
+                return std::to_string(GetValue<double>(index));
+            }
+            case moon::LuaType::String: {
+                return "\"" + GetValue<std::string>(index) + "\"";
+            }
+            case moon::LuaType::Table: {
+                auto size = (size_t)lua_rawlen(s_state, index);
+                return size > 0 ? printArray(index, size) : printMap(index);
+            }
+            default: {  // NOTE(mpinto): Other values, print type
+                return lua_typename(s_state, (int)type);
+            }
+        }
     }
 
     /**
@@ -938,7 +1025,7 @@ public:
     template <typename R>
     static inline R GetGlobalVariable(const char* name) {
         lua_getglobal(s_state, name);
-        const R r = GetValue<R>(-1);
+        const R r = GetValue<R>(GetTop());
         lua_pop(s_state, 1);
         return r;
     }
@@ -1124,7 +1211,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(-1);
+        lValue = GetValue<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1149,7 +1236,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(-1);
+        lValue = GetValue<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1174,7 +1261,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(-1);
+        lValue = GetValue<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1202,7 +1289,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(-1);
+        lValue = GetValue<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1274,6 +1361,19 @@ public:
         return map;
     }
 
+    /**
+     * @brief Creates a new lua function from a C function and stores it as ref.
+     *
+     * @param functionRef C function to create Lua one.
+     * @return LuaFunction
+     */
+    static moon::LuaFunction CreateFunction(moon::LuaCFunction functionRef) {
+        PushValue(functionRef);
+        moon::LuaFunction function(s_state, -1);
+        Pop();
+        return function;
+    }
+
 private:
     /**
      * @brief Lua state with static storage.
@@ -1295,13 +1395,10 @@ private:
      */
     static bool checkStatus(int status, const char* errMessage = "") {
         if (status != LUA_OK) {
-            if (status == LUA_ERRSYNTAX) {
-                const char* msg = lua_tostring(s_state, -1);
-                s_logger(msg != nullptr ? msg : errMessage);
-            } else if (status == LUA_ERRFILE) {
-                const char* msg = lua_tostring(s_state, -1);
-                s_logger(msg != nullptr ? msg : errMessage);
-            }
+            auto* msg = GetValue<const char*>(-1);
+            std::stringstream error;
+            error << "Lua error: " << (msg != nullptr ? msg : errMessage);
+            s_logger(error.str());
             return false;
         }
         return true;

@@ -24,7 +24,8 @@ static std::map<const char*, Test> tests = {
     {"lua_run_code", lua_run_code},
     {"get_dynamic_map_from_lua", get_dynamic_map_from_lua},
     {"create_object_ref_and_use_it", create_object_ref_and_use_it},
-    {"create_empty_dynamic_map_in_lua", create_empty_dynamic_map_in_lua}};
+    {"create_empty_dynamic_map_in_lua_with_expected_fail", create_empty_dynamic_map_in_lua_with_expected_fail},
+    {"complex_data_containers", complex_data_containers}};
 
 int RunTests() {
     const int nrOfTests = (int)tests.size();
