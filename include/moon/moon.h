@@ -889,6 +889,36 @@ public:
     static inline int GetTop() { return lua_gettop(s_state); }
 
     /**
+     * @brief Checks if provided index is under the limits of Lua stack.
+     *
+     * @param index Index to check.
+     * @return Whether or not the index is valid, inside the current stack elements.
+     */
+    static bool IsValidIndex(int index) {
+        int top = GetTop();
+        if (index == 0 || index > top) {
+            return false;
+        }
+        if (index < 0) {
+            return IsValidIndex(top + index + 1);
+        }
+        return true;
+    }
+
+    /**
+     * @brief Converts a negative index to a positive one. If already positive, returns it.
+     *
+     * @param index Index to convert.
+     * @return Converted index.
+     */
+    static int ConvertNegativeIndex(int index) {
+        if (index >= 0) {
+            return index;
+        }
+        return GetTop() + index + 1;
+    }
+
+    /**
      * @brief Returns a string containing all values current in the stack. Useful for debug purposes.
      */
     static std::string GetStackDump() {
@@ -909,6 +939,12 @@ public:
      * @return String containing value of element or type.
      */
     static std::string StackElementToStringDump(int index) {
+        if (!IsValidIndex(index)) {
+            s_logger("Moon warning: Tried to print element at invalid index!");
+            return "";
+        }
+        index = ConvertNegativeIndex(index);
+
         static auto printArray = [](int index, size_t size) -> std::string {
             std::stringstream dump;
             dump << "[";
@@ -1021,7 +1057,7 @@ public:
             return moon::Marshalling::GetValue<R>(s_state, index);
         } catch (const std::exception& e) {
             std::stringstream error;
-            error << "An exception was caught by Moon: " << e.what();
+            error << "Moon error: " << e.what();
             s_logger(error.str());
         }
         return {};
