@@ -3,6 +3,14 @@ project(moon)
 
 set(CMAKE_CXX_STANDARD 17)
 
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    message("Using GCC version ${CMAKE_CXX_COMPILER_VERSION}")
+    # require at least gcc 7.1
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.1)
+        message(FATAL_ERROR "GCC version must be at least 7.1!")
+    endif ()
+endif ()
+
 option(MOON_BUILD_TESTS "Build test programs" ON)
 option(MOON_BUILD_DOC "Build documentation" OFF)
 
@@ -43,7 +51,7 @@ if (NOT LUA_FOUND)
     endif ()
     add_subdirectory(lua)
     set(LUA_LIBRARIES lua)
-    set(LUA_INCLUDE_DIR "")
+    set(LUA_INCLUDE_DIR " ")
 endif ()
 
 add_library(moon INTERFACE)
