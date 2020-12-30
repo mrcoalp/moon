@@ -1,5 +1,6 @@
 set(BINARY ${CMAKE_PROJECT_NAME}_tst)
-add_executable(${BINARY} test.cpp)
+set(TESTS scripting.cpp basic.cpp)
+add_executable(${BINARY} tests.cpp main.cpp ${TESTS})
 add_test(NAME ${BINARY} COMMAND ${BINARY})
 target_link_libraries(${BINARY} PUBLIC moon)
 # Copy scripts folder to binary destination
