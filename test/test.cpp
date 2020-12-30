@@ -10,40 +10,31 @@
 #define ANSI_COLOR_CYAN "\x1b[36m"
 #define ANSI_COLOR_RESET "\x1b[0m"
 
-using Test = std::function<bool()>;
-static std::unordered_map<const char*, Test> tests = {
-    {"call_cpp_function_from_lua", call_cpp_function_from_lua},
-    {"call_lua_function_pass_binding_object_modify_inside_lua", call_lua_function_pass_binding_object_modify_inside_lua},
-    {"call_lua_function_pass_vector_get_string", call_lua_function_pass_vector_get_string},
-    {"call_lua_function_pass_multiple_params_get_int", call_lua_function_pass_multiple_params_get_int},
-    {"call_lua_function_pass_multiple_params_get_vector", call_lua_function_pass_multiple_params_get_vector},
-    {"call_lua_function_get_anonymous_function_and_call_it_no_args", call_lua_function_get_anonymous_function_and_call_it_no_args},
-    {"call_lua_function_get_anonymous_function_and_call_it_with_args", call_lua_function_get_anonymous_function_and_call_it_with_args},
-    {"cpp_class_bind_lua", cpp_class_bind_lua},
-    {"lua_run_code", lua_run_code},
-    {"get_dynamic_map_from_lua", get_dynamic_map_from_lua},
-    {"create_object_ref_and_use_it", create_object_ref_and_use_it},
-    {"create_empty_dynamic_map_in_lua_with_expected_fail", create_empty_dynamic_map_in_lua_with_expected_fail},
-    {"get_global_vars_from_lua", get_global_vars_from_lua},
-    {"get_c_object_from_lua", get_c_object_from_lua},
-    {"get_complex_data_containers_from_lua", get_complex_data_containers_from_lua}};
-
 int RunTests() {
-    const int nrOfTests = (int)tests.size();
+    const int nrOfTests = (int)s_tests.size();
     int passed = 0;
     printf(ANSI_COLOR_CYAN "Executing %d tests..." ANSI_COLOR_RESET "\n", nrOfTests);
-    for (const auto& test : tests) {
+    for (const auto& test : s_tests) {
+        printf(ANSI_COLOR_YELLOW "\n%s" ANSI_COLOR_RESET "\n", test.second.name.c_str());
         try {
-            if (test.second()) {
+            s_currentTest = test.second.name;
+            test.second.check();
+            for (const auto& success : test.second.successes) {
+                printf(ANSI_COLOR_GREEN "\t'%s' succeeded" ANSI_COLOR_RESET "\n", success.c_str());
+            }
+            for (const auto& failure : test.second.failures) {
+                printf(ANSI_COLOR_RED "\t'%s' failed" ANSI_COLOR_RESET "\n", failure.c_str());
+            }
+            if (test.second.failures.empty()) {
                 ++passed;
-                printf(ANSI_COLOR_GREEN "'%s' - passed" ANSI_COLOR_RESET "\n", test.first);
+                printf(ANSI_COLOR_GREEN "PASSED" ANSI_COLOR_RESET "\n");
             } else {
-                printf(ANSI_COLOR_RED "'%s' - failed" ANSI_COLOR_RESET "\n", test.first);
+                printf(ANSI_COLOR_RED "FAILED" ANSI_COLOR_RESET "\n");
             }
         } catch (const std::exception& e) {
-            printf(ANSI_COLOR_RED "'%s' raised an exception: %s" ANSI_COLOR_RESET "\n", test.first, e.what());
+            printf(ANSI_COLOR_RED "'%s' raised an exception: %s" ANSI_COLOR_RESET "\n", test.second.name.c_str(), e.what());
         } catch (...) {
-            printf(ANSI_COLOR_RED "'%s' raised an unknown exception" ANSI_COLOR_RESET "\n", test.first);
+            printf(ANSI_COLOR_RED "'%s' raised an unknown exception" ANSI_COLOR_RESET "\n", test.second.name.c_str());
         }
     }
     const int result = nrOfTests - passed;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "moon/moon.h"
+#include "tests.h"
 
 int testClass = -1;
 #ifdef RegisterClass
@@ -45,55 +46,53 @@ MOON_METHOD(cppFunction) {
     return 0;
 }
 
-bool call_cpp_function_from_lua() {
-    int top = Moon::GetTop();
+TEST(call_cpp_function_from_lua) {
+    BEGIN_STACK_GUARD
     Moon::RegisterFunction("cppFunction", cppFunction);
     Moon::RunCode(R"(cppFunction("passed"))");
-    return testCPPFunction == "passed" && top == Moon::GetTop();
+    END_STACK_GUARD
+    EXPECT(testCPPFunction == "passed")
 }
 
-bool call_lua_function_pass_binding_object_modify_inside_lua() {
-    int top = Moon::GetTop();
+TEST(call_lua_function_pass_binding_object_modify_inside_lua) {
     Script o(20);
+    BEGIN_STACK_GUARD
     Moon::LoadFile("scripts/luafunctions.lua");
-    if (!Moon::CallFunction("Object", &o)) {
-        return false;
-    }
-    return o.GetProp() == 1 && top == Moon::GetTop();
+    EXPECT(Moon::CallFunction("Object", &o))
+    END_STACK_GUARD
+    EXPECT(o.GetProp() == 1)
 }
 
-bool call_lua_function_pass_vector_get_string() {
-    int top = Moon::GetTop();
+TEST(call_lua_function_pass_vector_get_string) {
     std::vector<std::string> vec;
     std::string s;
-    Moon::LoadFile("scripts/luafunctions.lua");
     for (size_t i = 0; i < 100; ++i) {
         vec.push_back(std::to_string(i));
     }
-    if (!Moon::CallFunction(s, "OnUpdate", vec, 100)) {
-        return false;
-    }
-    return s == "99" && top == Moon::GetTop();
+    BEGIN_STACK_GUARD
+    Moon::LoadFile("scripts/luafunctions.lua");
+    EXPECT(Moon::CallFunction(s, "OnUpdate", vec, 100))
+    END_STACK_GUARD
+    EXPECT(s == "99")
 }
 
-bool call_lua_function_pass_multiple_params_get_int() {
-    int top = Moon::GetTop();
+TEST(call_lua_function_pass_multiple_params_get_int) {
     int i;
+    BEGIN_STACK_GUARD
     Moon::LoadFile("scripts/luafunctions.lua");
-    if (!Moon::CallFunction(i, "Maths", 2, 3, 4)) {
-        return false;
-    }
-    return i == 10 && top == Moon::GetTop();
+    EXPECT(Moon::CallFunction(i, "Maths", 2, 3, 4))
+    END_STACK_GUARD
+    EXPECT(i == 10)
 }
 
-bool call_lua_function_pass_multiple_params_get_vector() {
-    int top = Moon::GetTop();
+TEST(call_lua_function_pass_multiple_params_get_vector) {
     std::vector<double> vecRet;
+    BEGIN_STACK_GUARD
     Moon::LoadFile("scripts/luafunctions.lua");
-    if (!Moon::CallFunction(vecRet, "VecTest", 2.2, 3.14, 4.0)) {
-        return false;
-    }
-    return vecRet.size() == 3 && vecRet[1] == 3.14 && top == Moon::GetTop();
+    EXPECT(Moon::CallFunction(vecRet, "VecTest", 2.2, 3.14, 4.0))
+    END_STACK_GUARD
+    EXPECT(vecRet.size() == 3)
+    EXPECT(vecRet[1] == 3.14)
 }
 
 bool call_lua_function_get_anonymous_function_and_call_it_no_args() {
