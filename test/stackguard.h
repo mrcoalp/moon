@@ -10,7 +10,7 @@
 
 #define END_STACK_GUARD \
     }                   \
-    EXPECT(stack_top_begin == stack_top_end)
+    REQUIRE(stack_top_begin == stack_top_end);
 
 class StackGuard {
 public:

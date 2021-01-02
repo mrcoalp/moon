@@ -1,185 +1,274 @@
-#include "scripting.h"
-#include "tests.h"
+#include <catch2/catch.hpp>
 
-TEST(call_cpp_function_from_lua) {
-    BEGIN_STACK_GUARD
-    Moon::RegisterFunction("cppFunction", cppFunction);
-    Moon::RunCode(R"(cppFunction("passed"))");
-    END_STACK_GUARD
-    EXPECT(Scripting::testCPPFunction == "passed")
+#include "stackguard.h"
+
+TEST_CASE("initialize and close state", "[basic]") {
+    Moon::Init();
+    REQUIRE(Moon::GetState() != nullptr);
+    Moon::CloseState();
+    REQUIRE(Moon::GetState() == nullptr);
+    Moon::SetState(luaL_newstate());
+    REQUIRE(Moon::GetState() != nullptr);
+    Moon::CloseState();
+    REQUIRE(Moon::GetState() == nullptr);
 }
 
-TEST(call_lua_function_pass_binding_object_modify_inside_lua) {
-    Scripting o(20);
-    BEGIN_STACK_GUARD
-    Moon::LoadFile("scripts/luafunctions.lua");
-    EXPECT(Moon::CallFunction("Object", &o))
-    END_STACK_GUARD
-    EXPECT(o.GetProp() == 1)
-}
+TEST_CASE("index operations", "[basic]") {
+    Moon::Init();
 
-TEST(call_lua_function_pass_vector_get_string) {
-    std::vector<std::string> vec;
-    std::string s;
-    for (size_t i = 0; i < 100; ++i) {
-        vec.push_back(std::to_string(i));
+    SECTION("check for valid index") {
+        BEGIN_STACK_GUARD
+        Moon::PushValues(2, 3, 4, 5);
+        REQUIRE(Moon::IsValidIndex(3));
+        REQUIRE_FALSE(Moon::IsValidIndex(-5));
+        REQUIRE(Moon::IsValidIndex(-3));
+        REQUIRE_FALSE(Moon::IsValidIndex(0));
+        REQUIRE_FALSE(Moon::IsValidIndex(5));
+        Moon::Pop(4);
+        END_STACK_GUARD
     }
-    BEGIN_STACK_GUARD
-    Moon::LoadFile("scripts/luafunctions.lua");
-    EXPECT(Moon::CallFunction(s, "OnUpdate", vec, 100))
-    END_STACK_GUARD
-    EXPECT(s == "99")
+
+    SECTION("convert negative index") {
+        BEGIN_STACK_GUARD
+        Moon::PushValues(2, 3, 4, 5);
+        REQUIRE(Moon::ConvertNegativeIndex(-1) == 4);
+        REQUIRE(Moon::ConvertNegativeIndex(-1) == Moon::GetTop());
+        REQUIRE(Moon::ConvertNegativeIndex(-3) == 2);
+        REQUIRE(Moon::ConvertNegativeIndex(3) == 3);
+        Moon::Pop(4);
+        END_STACK_GUARD
+    }
+
+    Moon::CloseState();
 }
 
-TEST(call_lua_function_pass_multiple_params_get_int) {
-    int i;
-    BEGIN_STACK_GUARD
-    Moon::LoadFile("scripts/luafunctions.lua");
-    EXPECT(Moon::CallFunction(i, "Maths", 2, 3, 4))
-    END_STACK_GUARD
-    EXPECT(i == 10)
+TEST_CASE("print stack elements", "[basic]") {
+    Moon::Init();
+
+    SECTION("print a boolean") {
+        Moon::PushValue(true);
+        REQUIRE(Moon::StackElementToStringDump(-1) == "true");
+        Moon::Pop();
+    }
+
+    SECTION("print a number") {
+        double d = 2;
+        Moon::PushValue(d);
+        REQUIRE(Moon::StackElementToStringDump(-1) == std::to_string(d));
+        Moon::Pop();
+    }
+
+    SECTION("print a string") {
+        Moon::PushValue("passed");
+        REQUIRE(Moon::StackElementToStringDump(-1) == R"("passed")");
+        Moon::Pop();
+    }
+
+    SECTION("print a vector") {
+        Moon::PushValue(std::vector<std::string>{"passed", "passed_again"});
+        REQUIRE(Moon::StackElementToStringDump(-1) == R"(["passed", "passed_again"])");
+        Moon::Pop();
+    }
+
+    Moon::CloseState();
 }
 
-TEST(call_lua_function_pass_multiple_params_get_vector) {
-    std::vector<double> vecRet;
-    BEGIN_STACK_GUARD
-    Moon::LoadFile("scripts/luafunctions.lua");
-    EXPECT(Moon::CallFunction(vecRet, "VecTest", 2.2, 3.14, 4.0))
-    END_STACK_GUARD
-    EXPECT(vecRet.size() == 3)
-    EXPECT(vecRet[1] == 3.14)
+TEST_CASE("loading files", "[basic]") {
+    Moon::Init();
+    std::string error;
+    Moon::SetLogger([&error](const std::string& error_) { error = error_; });
+    REQUIRE_FALSE(Moon::LoadFile("failed.lua"));
+    REQUIRE_FALSE(Moon::LoadFile("scripts/failed.lua"));
+    REQUIRE(!error.empty());
+    REQUIRE(Moon::LoadFile("scripts/luavariables.lua"));
+    REQUIRE(Moon::GetGlobalVariable<bool>("bool"));
+    Moon::CloseState();
 }
 
-TEST(call_lua_function_get_anonymous_function_and_call_it_no_args) {
-    moon::LuaFunction fun;
+CATCH_REGISTER_ENUM(moon::LuaType, moon::LuaType::Null, moon::LuaType::Boolean, moon::LuaType::LightUserData, moon::LuaType::Number,
+                    moon::LuaType::String, moon::LuaType::Table, moon::LuaType::Function, moon::LuaType::UserData, moon::LuaType::Thread);
+
+TEST_CASE("check lua types", "[basic]") {
+    Moon::Init();
     BEGIN_STACK_GUARD
-    Moon::RegisterFunction("cppFunction", cppFunction);
-    Moon::LoadFile("scripts/luafunctions.lua");
-    EXPECT(Moon::CallFunction(fun, "TestCallback"))
-    EXPECT(fun())
-    fun.Unload();
+    Moon::PushValues(2, true, "passed", std::vector<int>{1, 2, 3});
+    Moon::PushNull();
+    REQUIRE(Moon::GetValueType(-2) == moon::LuaType::Table);
+    REQUIRE(Moon::GetValueType(2) == moon::LuaType::Boolean);
+    REQUIRE(Moon::GetValueType(-1) == moon::LuaType::Null);
+    Moon::Pop(5);
     END_STACK_GUARD
-    EXPECT(Scripting::testCPPFunction == "passed_again")
+    Moon::CloseState();
 }
 
-TEST(call_lua_function_get_anonymous_function_and_call_it_with_args) {
-    moon::LuaFunction fun;
-    Scripting::testCPPFunction = "";
-    BEGIN_STACK_GUARD
-    Moon::RegisterFunction("cppFunction", cppFunction);
-    Moon::LoadFile("scripts/luafunctions.lua");
-    EXPECT(Moon::CallFunction(fun, "TestCallbackArgs"))
-    EXPECT(Moon::LuaFunctionCall(fun, "passed_again"))
-    END_STACK_GUARD
-    fun.Unload();
-    EXPECT(Scripting::testCPPFunction == "passed_again")
+TEST_CASE("push and get values, non-user types", "[basic]") {
+    Moon::Init();
+    Moon::SetLogger([](const auto& error) { INFO(error); });
+
+    SECTION("push and get a bool") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue(true);
+        auto b = Moon::GetValue<bool>(-1);
+        REQUIRE(b);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get an integer") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue(3);
+        auto i = Moon::GetValue<int>(-1);
+        REQUIRE(i == 3);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get an unsigned integer") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue(3);
+        auto u = Moon::GetValue<uint32_t>(-1);
+        REQUIRE(u == 3);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get a float") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue(3.14f);
+        auto f = Moon::GetValue<float>(-1);
+        REQUIRE(f == 3.14f);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get a double") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue(3.14);
+        auto d = Moon::GetValue<double>(-1);
+        REQUIRE(d == 3.14);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get a string") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue("passed");
+        auto s = Moon::GetValue<std::string>(-1);
+        REQUIRE(s == "passed");
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get a C string") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue("passed");
+        const auto* cs = Moon::GetValue<const char*>(-1);
+        REQUIRE(strcmp(cs, "passed") == 0);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push and get a char") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue('m');
+        auto c = Moon::GetValue<char>(-1);
+        REQUIRE(c == 'm');
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    Moon::CloseState();
 }
 
-TEST(cpp_class_bind_lua) {
-    Moon::LoadFile("scripts/cppclass.lua");
-    EXPECT(Scripting::testClass == 40)
-}
+TEST_CASE("push and get values, data containers", "[basic]") {
+    Moon::Init();
+    Moon::SetLogger([](const auto& error) { INFO(error); });
 
-TEST(lua_run_code) {
-    const bool status = Moon::RunCode("a = 'passed'");
-    EXPECT(status)
-    BEGIN_STACK_GUARD
-    const auto s = Moon::GetGlobalVariable<std::string>("a");
-    EXPECT(s == "passed")
-    END_STACK_GUARD
-}
+    SECTION("get a vector") {
+        BEGIN_STACK_GUARD
+        Moon::RunCode("vec = {1, 2, 3}");
+        auto v = Moon::GetGlobalVariable<std::vector<int>>("vec");
+        REQUIRE(v[1] == 2);
+        END_STACK_GUARD
+    }
 
-TEST(get_dynamic_map_from_lua) {
-    Moon::LoadFile("scripts/luafunctions.lua");
-    moon::LuaDynamicMap map;
-    bool value = false;
-    BEGIN_STACK_GUARD
-    EXPECT(Moon::CallFunction(map, "GetMap"))
-    EXPECT(Moon::CallFunction(value, "GetMapValue", map))
-    map.Unload();
-    END_STACK_GUARD
-    EXPECT(value)
-}
+    SECTION("get a map") {
+        BEGIN_STACK_GUARD
+        Moon::RunCode("map = {x = {a = 1}, y = {b = 2}}");
+        auto m = Moon::GetGlobalVariable<moon::LuaMap<moon::LuaMap<int>>>("map");
+        REQUIRE(m.at("y").at("b") == 2);
+        END_STACK_GUARD
+    }
 
-TEST(create_object_ref_and_use_it) {
-    Moon::LoadFile("scripts/luafunctions.lua");
-    Scripting object(0);
-    BEGIN_STACK_GUARD
-    Moon::PushValue(&object);
-    auto ref = Moon::CreateRef();
-    Moon::Pop();
-    EXPECT(Moon::CallFunction("Object", ref))
-    ref.Unload();
-    END_STACK_GUARD
-    EXPECT(Scripting::testClass == 1)
-}
+    SECTION("push and get an int vector") {
+        static auto randomNumber = []() -> int { return std::rand() % 100; };
+        std::vector<int> vec(100);
+        std::generate(vec.begin(), vec.end(), randomNumber);
+        BEGIN_STACK_GUARD
+        Moon::PushValue(vec);
+        auto v = Moon::GetValue<std::vector<int>>(-1);
+        REQUIRE(vec == v);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
 
-TEST(create_empty_dynamic_map_in_lua_with_expected_fail) {
-    Moon::LoadFile("scripts/luafunctions.lua");
-    moon::LuaDynamicMap map;
-    bool value = false;
-    BEGIN_STACK_GUARD
-    EXPECT(!Moon::CallFunction("AddValueToMap", map))
-    map = Moon::CreateDynamicMap();
-    EXPECT(Moon::CallFunction("AddValueToMap", map))
-    EXPECT(Moon::CallFunction(value, "GetMapValue", map))
-    map.Unload();
-    END_STACK_GUARD
-    EXPECT(value)
-}
+    SECTION("push and get a map") {
+        static auto randomNumber = []() -> int { return std::rand() % 100; };
+        std::map<std::string, int> map;
+        for (int i = 0; i < 100; ++i) {
+            map.emplace(std::to_string(i), randomNumber());
+        }
+        BEGIN_STACK_GUARD
+        Moon::PushValue(map);
+        auto m = Moon::GetValue<std::map<std::string, int>>(-1);
+        REQUIRE(map == m);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
 
-TEST(get_global_vars_from_lua) {
-    Moon::LoadFile("scripts/luavariables.lua");
-    BEGIN_STACK_GUARD
-    const auto s = Moon::GetGlobalVariable<std::string>("string");
-    EXPECT(s == "passed")
-    const bool b = Moon::GetGlobalVariable<bool>("bool");
-    EXPECT(b)
-    const int i = Moon::GetGlobalVariable<int>("int");
-    EXPECT(i == -1)
-    const auto f = Moon::GetGlobalVariable<float>("float");
-    EXPECT(f == 12.6f)
-    const auto d = Moon::GetGlobalVariable<double>("double");
-    EXPECT(d == 3.14)
-    END_STACK_GUARD
-}
+    SECTION("push and get an unordered map") {
+        static auto randomNumber = []() -> int { return std::rand() % 100; };
+        moon::LuaMap<int> map;
+        for (int i = 0; i < 100; ++i) {
+            map.emplace(std::to_string(i), randomNumber());
+        }
+        BEGIN_STACK_GUARD
+        Moon::PushValue(map);
+        auto m = Moon::GetValue<moon::LuaMap<int>>(-1);
+        REQUIRE(map.at("1") == m.at("1"));
+        Moon::Pop();
+        END_STACK_GUARD
+    }
 
-TEST(get_c_object_from_lua) {
-    Scripting o(2);
-    BEGIN_STACK_GUARD
-    Moon::PushValue(&o);
-    auto a = Moon::GetValue<Scripting>(-1);
-    Moon::Pop();
-    EXPECT(a.GetProp() == 2)
-    END_STACK_GUARD
-}
+    SECTION("push and get complex data containers (nested vectors and maps)") {
+        moon::LuaMap<moon::LuaMap<bool>> map;
+        moon::LuaMap<bool> nested_map;
+        nested_map.emplace("first", true);
+        map.emplace("first", nested_map);
+        std::vector<std::vector<std::vector<double>>> vec;
+        vec.push_back({{2, 3.14, 4}, {4.6, 5, 6}});
+        vec.push_back({{6, 7, 8}, {8.1, 9, 10.10}});
+        std::vector<moon::LuaMap<std::vector<double>>> other_vec;
+        other_vec.push_back({{"first", {2, 3.14, 4}}, {"second", {4.6, 5, 6}}});
+        moon::LuaMap<std::vector<std::vector<std::vector<double>>>> other_map;
+        other_map.emplace("first", vec);
+        other_map.emplace("second", vec);
+        BEGIN_STACK_GUARD
+        Moon::PushValue(map);
+        Moon::PushValue(vec);
+        Moon::PushValue(other_vec);
+        Moon::PushValue(other_map);
+        auto a = Moon::GetValue<moon::LuaMap<moon::LuaMap<bool>>>(1);
+        REQUIRE(a.at("first").at("first"));
+        auto b = Moon::GetValue<std::vector<std::vector<std::vector<double>>>>(-3);
+        REQUIRE(b[0][0][1] == 3.14);
+        auto c = Moon::GetValue<std::vector<moon::LuaMap<std::vector<double>>>>(-2);
+        REQUIRE(c[0].at("first")[2] == 4);
+        auto d = Moon::GetValue<moon::LuaMap<std::vector<std::vector<std::vector<double>>>>>(Moon::GetTop());
+        REQUIRE(d.at("second")[1][1][2] == 10.10);
+        Moon::Pop(4);
+        END_STACK_GUARD
+    }
 
-TEST(get_complex_data_containers_from_lua) {
-    moon::LuaMap<moon::LuaMap<bool>> map;
-    moon::LuaMap<bool> nested_map;
-    nested_map.emplace("first", true);
-    map.emplace("first", nested_map);
-    std::vector<std::vector<std::vector<double>>> vec;
-    vec.push_back({{2, 3.14, 4}, {4.6, 5, 6}});
-    vec.push_back({{6, 7, 8}, {8.1, 9, 10.10}});
-    std::vector<moon::LuaMap<std::vector<double>>> other_vec;
-    other_vec.push_back({{"first", {2, 3.14, 4}}, {"second", {4.6, 5, 6}}});
-    moon::LuaMap<std::vector<std::vector<std::vector<double>>>> other_map;
-    other_map.emplace("first", vec);
-    other_map.emplace("second", vec);
-    BEGIN_STACK_GUARD
-    Moon::PushValue(map);
-    Moon::PushValue(vec);
-    Moon::PushValue(other_vec);
-    Moon::PushValue(other_map);
-    auto a = Moon::GetValue<moon::LuaMap<moon::LuaMap<bool>>>(1);
-    EXPECT(a.at("first").at("first"))
-    auto b = Moon::GetValue<std::vector<std::vector<std::vector<double>>>>(-3);
-    EXPECT(b[0][0][1] == 3.14)
-    auto c = Moon::GetValue<std::vector<moon::LuaMap<std::vector<double>>>>(-2);
-    EXPECT(c[0].at("first")[2] == 4)
-    auto d = Moon::GetValue<moon::LuaMap<std::vector<std::vector<std::vector<double>>>>>(Moon::GetTop());
-    EXPECT(d.at("second")[1][1][2] == 10.10)
-    Moon::Pop(4);
-    END_STACK_GUARD
+    Moon::CloseState();
 }

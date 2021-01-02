@@ -1,8 +1,26 @@
+enable_testing()
+
+set(CATCH_LIB_URL "https://github.com/catchorg/Catch2.git")
+set(CATCH_LIB_BRANCH "v2.x")
+
+if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/catch)
+    execute_process(COMMAND git clone --recurse-submodules -b ${CATCH_LIB_BRANCH} --depth 1 ${CATCH_LIB_URL} ${CMAKE_CURRENT_SOURCE_DIR}/catch)
+endif ()
+
+set(CATCH_BUILD_TESTING OFF)
+set(CATCH_INSTALL_DOCS OFF)
+set(CATCH_INSTALL_HELPERS OFF)
+add_subdirectory(catch)
+
 set(BINARY ${CMAKE_PROJECT_NAME}_tst)
+
 set(TESTS scripting.cpp basic.cpp)
-add_executable(${BINARY} tests.cpp main.cpp ${TESTS})
+
+add_executable(${BINARY} test-main.cpp ${TESTS})
+
 add_test(NAME ${BINARY} COMMAND ${BINARY})
-target_link_libraries(${BINARY} PUBLIC moon)
+
+target_link_libraries(${BINARY} PRIVATE Catch2 moon)
 # Copy scripts folder to binary destination
 file(COPY scripts DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 

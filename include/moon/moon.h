@@ -619,23 +619,15 @@ private:
 };
 
 template <typename T>
-struct Number : std::false_type {};
-template <>
-struct Number<int> : std::true_type {};
-template <>
-struct Number<unsigned> : std::true_type {};
-template <>
-struct Number<float> : std::true_type {};
-template <>
-struct Number<double> : std::true_type {};
-template <typename T>
-using IsNumber = std::enable_if_t<Number<T>::value, T>;
-template <typename T>
 using IsBool = std::enable_if_t<std::is_same_v<T, bool>, T>;
+template <typename T>
+using IsNumber = std::enable_if_t<std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, T>;
 template <typename T>
 using IsString = std::enable_if_t<std::is_same_v<T, std::string>, T>;
 template <typename T>
 using IsCString = std::enable_if_t<std::is_same_v<T, const char*>, T>;
+template <typename T>
+using IsLuaRef = std::enable_if_t<std::is_same_v<T, LuaRef>, T>;
 template <typename T>
 using IsLuaFunction = std::enable_if_t<std::is_same_v<T, LuaFunction>, T>;
 template <typename T>
@@ -662,15 +654,15 @@ using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<
 class Marshalling {
 public:
     template <typename R>
-    static IsNumber<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isnumber(L, index));
-        return static_cast<R>(lua_tonumber(L, index));
-    }
-
-    template <typename R>
     static IsBool<R> GetValue(lua_State* L, int index) {
         assertType(lua_isboolean(L, index));
         return lua_toboolean(L, index) != 0;
+    }
+
+    template <typename R>
+    static IsNumber<R> GetValue(lua_State* L, int index) {
+        assertType(lua_isnumber(L, index));
+        return static_cast<R>(lua_tonumber(L, index));
     }
 
     template <typename R>
@@ -685,6 +677,11 @@ public:
     static IsCString<R> GetValue(lua_State* L, int index) {
         assertType(lua_isstring(L, index));
         return lua_tostring(L, index);
+    }
+
+    template <typename R>
+    static IsLuaRef<R> GetValue(lua_State* L, int index) {
+        return {L, index};
     }
 
     template <typename R>
@@ -744,15 +741,15 @@ public:
         return map;
     }
 
+    static void PushValue(lua_State* L, bool value) { lua_pushboolean(L, (int)value); }
+
     static void PushValue(lua_State* L, int value) { lua_pushinteger(L, value); }
+
+    static void PushValue(lua_State* L, unsigned value) { lua_pushinteger(L, value); }
 
     static void PushValue(lua_State* L, float value) { lua_pushnumber(L, value); }
 
     static void PushValue(lua_State* L, double value) { lua_pushnumber(L, value); }
-
-    static void PushValue(lua_State* L, bool value) { lua_pushboolean(L, (int)value); }
-
-    static void PushValue(lua_State* L, unsigned value) { lua_pushinteger(L, value); }
 
     static void PushValue(lua_State* L, const std::string& value) { lua_pushstring(L, value.c_str()); }
 

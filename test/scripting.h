@@ -3,8 +3,7 @@
 #ifndef SCRIPTING_H
 #define SCRIPTING_H
 
-#include "stackguard.h"
-#include "tests.h"
+#include "moon/moon.h"
 
 #ifdef RegisterClass
 #undef RegisterClass
