@@ -43,7 +43,7 @@ OUT=$(pwd)
 cd build/Debug/test || exit 1
 if [ $COVERAGE = 1 ]; then
   # Output to file without color codes
-  ./moon_tst | sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,2})?)?[mGK]//g" >$OUT/test_coverage.txt
+  ./moon_tst -o "$OUT"/test_coverage.xml -r junit
 fi
 
 ./moon_tst || exit 1

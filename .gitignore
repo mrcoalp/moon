@@ -14,6 +14,7 @@ build/
 logs/
 tidy_coverage.txt
 format_coverage.txt
-test_coverage.txt
+test_coverage.xml
 compile_commands.json
 lua/
+test/catch
