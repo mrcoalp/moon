@@ -19,6 +19,16 @@ add_executable(${BINARY} test-main.cpp ${TESTS})
 
 add_test(NAME ${BINARY} COMMAND ${BINARY})
 
+if (CMAKE_COMPILER_IS_GNUCXX)
+    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+    include(CodeCoverage)
+    setup_target_for_coverage(${CMAKE_PROJECT_NAME}_coverage ${BINARY} coverage)
+
+    SET(CMAKE_CXX_FLAGS "-g -O0 -fprofile-arcs -ftest-coverage")
+    SET(CMAKE_C_FLAGS "-g -O0 -fprofile-arcs -ftest-coverage")
+endif ()
+
 target_link_libraries(${BINARY} PRIVATE Catch2 moon)
 # Copy scripts folder to binary destination
 file(COPY scripts DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
