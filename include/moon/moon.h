@@ -850,6 +850,7 @@ public:
         luaL_openlibs(s_state);
         luaL_newmetatable(s_state, moon::LUA_REF_HOLDER_META_NAME);
         Pop();
+        s_logger = [](const auto&) {};
     }
 
     /**
@@ -1431,7 +1432,7 @@ private:
     /**
      * @brief Logger callback to be defined by client.
      */
-    inline static std::function<void(const std::string&)> s_logger{[](const std::string&) {}};
+    inline static std::function<void(const std::string&)> s_logger;
 
     /**
      * @brief Checks for lua status and returns if ok or not.

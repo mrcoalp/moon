@@ -103,7 +103,6 @@ TEST_CASE("check lua types", "[basic]") {
 
 TEST_CASE("push and get values, non-user types", "[basic]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { INFO(error); });
 
     SECTION("push and get a bool") {
         BEGIN_STACK_GUARD
@@ -177,12 +176,28 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
         END_STACK_GUARD
     }
 
+    SECTION("push a string try to get a bool") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue("not_passed");
+        auto b = Moon::GetValue<bool>(-1);
+        REQUIRE_FALSE(b);
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
+    SECTION("push a string try to get a bool with throw") {
+        BEGIN_STACK_GUARD
+        Moon::PushValue("not_passed");
+        REQUIRE_THROWS(moon::Marshalling::GetValue<bool>(Moon::GetState(), -1));
+        Moon::Pop();
+        END_STACK_GUARD
+    }
+
     Moon::CloseState();
 }
 
 TEST_CASE("push and get values, data containers", "[basic]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { INFO(error); });
 
     SECTION("get a vector") {
         BEGIN_STACK_GUARD
