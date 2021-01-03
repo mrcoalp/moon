@@ -46,26 +46,26 @@ TEST_CASE("print stack elements", "[basic]") {
     Moon::Init();
 
     SECTION("print a boolean") {
-        Moon::PushValue(true);
+        Moon::Push(true);
         REQUIRE(Moon::StackElementToStringDump(-1) == "true");
         Moon::Pop();
     }
 
     SECTION("print a number") {
         double d = 2;
-        Moon::PushValue(d);
+        Moon::Push(d);
         REQUIRE(Moon::StackElementToStringDump(-1) == std::to_string(d));
         Moon::Pop();
     }
 
     SECTION("print a string") {
-        Moon::PushValue("passed");
+        Moon::Push("passed");
         REQUIRE(Moon::StackElementToStringDump(-1) == R"("passed")");
         Moon::Pop();
     }
 
     SECTION("print a vector") {
-        Moon::PushValue(std::vector<std::string>{"passed", "passed_again"});
+        Moon::Push(std::vector<std::string>{"passed", "passed_again"});
         REQUIRE(Moon::StackElementToStringDump(-1) == R"(["passed", "passed_again"])");
         Moon::Pop();
     }
@@ -94,9 +94,9 @@ TEST_CASE("check lua types", "[basic]") {
     BEGIN_STACK_GUARD
     Moon::PushValues(2, true, "passed", std::vector<int>{1, 2, 3});
     Moon::PushNull();
-    REQUIRE(Moon::GetValueType(-2) == moon::LuaType::Table);
-    REQUIRE(Moon::GetValueType(2) == moon::LuaType::Boolean);
-    REQUIRE(Moon::GetValueType(-1) == moon::LuaType::Null);
+    REQUIRE(Moon::GetType(-2) == moon::LuaType::Table);
+    REQUIRE(Moon::GetType(2) == moon::LuaType::Boolean);
+    REQUIRE(Moon::GetType(-1) == moon::LuaType::Null);
     Moon::Pop(5);
     END_STACK_GUARD
     Moon::CloseState();
@@ -107,8 +107,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a bool") {
         BEGIN_STACK_GUARD
-        Moon::PushValue(true);
-        auto b = Moon::GetValue<bool>(-1);
+        Moon::Push(true);
+        auto b = Moon::Get<bool>(-1);
         REQUIRE(b);
         Moon::Pop();
         END_STACK_GUARD
@@ -116,8 +116,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get an integer") {
         BEGIN_STACK_GUARD
-        Moon::PushValue(3);
-        auto i = Moon::GetValue<int>(-1);
+        Moon::Push(3);
+        auto i = Moon::Get<int>(-1);
         REQUIRE(i == 3);
         Moon::Pop();
         END_STACK_GUARD
@@ -125,8 +125,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get an unsigned integer") {
         BEGIN_STACK_GUARD
-        Moon::PushValue(3);
-        auto u = Moon::GetValue<uint32_t>(-1);
+        Moon::Push(3);
+        auto u = Moon::Get<uint32_t>(-1);
         REQUIRE(u == 3);
         Moon::Pop();
         END_STACK_GUARD
@@ -134,8 +134,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a float") {
         BEGIN_STACK_GUARD
-        Moon::PushValue(3.14f);
-        auto f = Moon::GetValue<float>(-1);
+        Moon::Push(3.14f);
+        auto f = Moon::Get<float>(-1);
         REQUIRE(f == 3.14f);
         Moon::Pop();
         END_STACK_GUARD
@@ -143,8 +143,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a double") {
         BEGIN_STACK_GUARD
-        Moon::PushValue(3.14);
-        auto d = Moon::GetValue<double>(-1);
+        Moon::Push(3.14);
+        auto d = Moon::Get<double>(-1);
         REQUIRE(d == 3.14);
         Moon::Pop();
         END_STACK_GUARD
@@ -152,8 +152,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a string") {
         BEGIN_STACK_GUARD
-        Moon::PushValue("passed");
-        auto s = Moon::GetValue<std::string>(-1);
+        Moon::Push("passed");
+        auto s = Moon::Get<std::string>(-1);
         REQUIRE(s == "passed");
         Moon::Pop();
         END_STACK_GUARD
@@ -161,8 +161,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a C string") {
         BEGIN_STACK_GUARD
-        Moon::PushValue("passed");
-        const auto* cs = Moon::GetValue<const char*>(-1);
+        Moon::Push("passed");
+        const auto* cs = Moon::Get<const char*>(-1);
         REQUIRE(strcmp(cs, "passed") == 0);
         Moon::Pop();
         END_STACK_GUARD
@@ -170,8 +170,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a char") {
         BEGIN_STACK_GUARD
-        Moon::PushValue('m');
-        auto c = Moon::GetValue<char>(-1);
+        Moon::Push('m');
+        auto c = Moon::Get<char>(-1);
         REQUIRE(c == 'm');
         Moon::Pop();
         END_STACK_GUARD
@@ -179,8 +179,8 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push a string try to get a bool") {
         BEGIN_STACK_GUARD
-        Moon::PushValue("not_passed");
-        auto b = Moon::GetValue<bool>(-1);
+        Moon::Push("not_passed");
+        auto b = Moon::Get<bool>(-1);
         REQUIRE_FALSE(b);
         Moon::Pop();
         END_STACK_GUARD
@@ -188,7 +188,7 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push a string try to get a bool with throw") {
         BEGIN_STACK_GUARD
-        Moon::PushValue("not_passed");
+        Moon::Push("not_passed");
         REQUIRE_THROWS(moon::Marshalling::GetValue<bool>(Moon::GetState(), -1));
         Moon::Pop();
         END_STACK_GUARD
@@ -203,7 +203,7 @@ TEST_CASE("push and get values, data containers", "[basic]") {
     SECTION("get a vector") {
         BEGIN_STACK_GUARD
         Moon::RunCode("vec = {1, 2, 3}");
-        auto v = Moon::GetGlobalVariable<std::vector<int>>("vec");
+        auto v = Moon::Get<std::vector<int>>("vec");
         REQUIRE(v[1] == 2);
         END_STACK_GUARD
     }
@@ -211,7 +211,7 @@ TEST_CASE("push and get values, data containers", "[basic]") {
     SECTION("get a map") {
         BEGIN_STACK_GUARD
         Moon::RunCode("map = {x = {a = 1}, y = {b = 2}}");
-        auto m = Moon::GetGlobalVariable<moon::LuaMap<moon::LuaMap<int>>>("map");
+        auto m = Moon::Get<moon::LuaMap<moon::LuaMap<int>>>("map");
         REQUIRE(m.at("y").at("b") == 2);
         END_STACK_GUARD
     }
@@ -221,8 +221,8 @@ TEST_CASE("push and get values, data containers", "[basic]") {
         std::vector<int> vec(100);
         std::generate(vec.begin(), vec.end(), randomNumber);
         BEGIN_STACK_GUARD
-        Moon::PushValue(vec);
-        auto v = Moon::GetValue<std::vector<int>>(-1);
+        Moon::Push(vec);
+        auto v = Moon::Get<std::vector<int>>(-1);
         REQUIRE(vec == v);
         Moon::Pop();
         END_STACK_GUARD
@@ -235,8 +235,8 @@ TEST_CASE("push and get values, data containers", "[basic]") {
             map.emplace(std::to_string(i), randomNumber());
         }
         BEGIN_STACK_GUARD
-        Moon::PushValue(map);
-        auto m = Moon::GetValue<std::map<std::string, int>>(-1);
+        Moon::Push(map);
+        auto m = Moon::Get<std::map<std::string, int>>(-1);
         REQUIRE(map == m);
         Moon::Pop();
         END_STACK_GUARD
@@ -249,8 +249,8 @@ TEST_CASE("push and get values, data containers", "[basic]") {
             map.emplace(std::to_string(i), randomNumber());
         }
         BEGIN_STACK_GUARD
-        Moon::PushValue(map);
-        auto m = Moon::GetValue<moon::LuaMap<int>>(-1);
+        Moon::Push(map);
+        auto m = Moon::Get<moon::LuaMap<int>>(-1);
         REQUIRE(map.at("1") == m.at("1"));
         Moon::Pop();
         END_STACK_GUARD
@@ -270,17 +270,17 @@ TEST_CASE("push and get values, data containers", "[basic]") {
         other_map.emplace("first", vec);
         other_map.emplace("second", vec);
         BEGIN_STACK_GUARD
-        Moon::PushValue(map);
-        Moon::PushValue(vec);
-        Moon::PushValue(other_vec);
-        Moon::PushValue(other_map);
-        auto a = Moon::GetValue<moon::LuaMap<moon::LuaMap<bool>>>(1);
+        Moon::Push(map);
+        Moon::Push(vec);
+        Moon::Push(other_vec);
+        Moon::Push(other_map);
+        auto a = Moon::Get<moon::LuaMap<moon::LuaMap<bool>>>(1);
         REQUIRE(a.at("first").at("first"));
-        auto b = Moon::GetValue<std::vector<std::vector<std::vector<double>>>>(-3);
+        auto b = Moon::Get<std::vector<std::vector<std::vector<double>>>>(-3);
         REQUIRE(b[0][0][1] == 3.14);
-        auto c = Moon::GetValue<std::vector<moon::LuaMap<std::vector<double>>>>(-2);
+        auto c = Moon::Get<std::vector<moon::LuaMap<std::vector<double>>>>(-2);
         REQUIRE(c[0].at("first")[2] == 4);
-        auto d = Moon::GetValue<moon::LuaMap<std::vector<std::vector<std::vector<double>>>>>(Moon::GetTop());
+        auto d = Moon::Get<moon::LuaMap<std::vector<std::vector<std::vector<double>>>>>(Moon::GetTop());
         REQUIRE(d.at("second")[1][1][2] == 10.10);
         Moon::Pop(4);
         END_STACK_GUARD
@@ -299,11 +299,11 @@ float = 12.6
 double = 3.14
 )");
     BEGIN_STACK_GUARD
-    REQUIRE(Moon::GetGlobalVariable<std::string>("string") == "passed");
-    REQUIRE(Moon::GetGlobalVariable<bool>("bool"));
-    REQUIRE(Moon::GetGlobalVariable<int>("int") == -1);
-    REQUIRE(Moon::GetGlobalVariable<float>("float") == 12.6f);
-    REQUIRE(Moon::GetGlobalVariable<double>("double") == 3.14);
+    REQUIRE(Moon::Get<std::string>("string") == "passed");
+    REQUIRE(Moon::Get<bool>("bool"));
+    REQUIRE(Moon::Get<int>("int") == -1);
+    REQUIRE(Moon::Get<float>("float") == 12.6f);
+    REQUIRE(Moon::Get<double>("double") == 3.14);
     END_STACK_GUARD
     Moon::CloseState();
 }

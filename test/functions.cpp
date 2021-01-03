@@ -9,13 +9,13 @@ TEST_CASE("call functions", "[functions]") {
 
     SECTION("no arguments, no return") {
         Moon::RunCode("function Test() end");
-        REQUIRE(Moon::CallFunction("Test"));
+        REQUIRE(Moon::Call("Test"));
     }
 
     SECTION("arguments, no return") {
         Moon::RunCode("function Test(a, b, c) assert(a + b == 3); assert(c == 'passed') end");
         BEGIN_STACK_GUARD
-        REQUIRE(Moon::CallFunction("Test", 2, 1, "passed"));
+        REQUIRE(Moon::Call("Test", 2, 1, "passed"));
         END_STACK_GUARD
     }
 
@@ -23,7 +23,7 @@ TEST_CASE("call functions", "[functions]") {
         Moon::RunCode("function Test() return 'passed' end");
         std::string s;
         BEGIN_STACK_GUARD
-        REQUIRE(Moon::CallFunction(s, "Test"));
+        REQUIRE(Moon::Call(s, "Test"));
         END_STACK_GUARD
         REQUIRE(s == "passed");
     }
@@ -33,9 +33,16 @@ TEST_CASE("call functions", "[functions]") {
         std::vector<std::string> vec;
         moon::LuaMap<std::vector<std::string>> map{std::make_pair("first", std::vector<std::string>{"passed"})};
         BEGIN_STACK_GUARD
-        REQUIRE(Moon::CallFunction(vec, "Test", 2, 1, true, map));
+        REQUIRE(Moon::Call(vec, "Test", 2, 1, true, map));
         END_STACK_GUARD
         REQUIRE(vec[0] == "passed");
+    }
+
+    SECTION("directly from stack") {
+        BEGIN_STACK_GUARD
+        Moon::RunCode("return function(passed) assert(passed) end");
+        REQUIRE(Moon::Call(true));
+        END_STACK_GUARD
     }
 
     Moon::CloseState();
@@ -55,7 +62,7 @@ TEST_CASE("register C++ functions, lambdas", "[functions][basic]") {
         BEGIN_STACK_GUARD
         Moon::RegisterFunction("TestCPPStaticFunction", TestCPPStaticFunction);
         REQUIRE(Moon::RunCode("return TestCPPStaticFunction(2, 3)"));
-        auto s = Moon::GetValue<std::string>(-1);
+        auto s = Moon::Get<std::string>(-1);
         REQUIRE(s == "5");
         Moon::Pop();
         END_STACK_GUARD
@@ -65,7 +72,7 @@ TEST_CASE("register C++ functions, lambdas", "[functions][basic]") {
         BEGIN_STACK_GUARD
         Moon::RegisterFunction("TestCPPStaticFunction", &Test::TestCPPStaticFunction);
         REQUIRE(Moon::RunCode("return TestCPPStaticFunction(true)"));
-        auto s = Moon::GetValue<std::string>(-1);
+        auto s = Moon::Get<std::string>(-1);
         REQUIRE(s == "passed");
         Moon::Pop();
         END_STACK_GUARD

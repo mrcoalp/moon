@@ -16,14 +16,14 @@
 
 #define MOON_DECLARE_CLASS(_class) static moon::Binding<_class> Binding;
 
-#define MOON_PROPERTY(_property)                           \
-    int Get_##_property(lua_State* L) {                    \
-        Moon::PushValue(_property);                        \
-        return 1;                                          \
-    }                                                      \
-    int Set_##_property(lua_State* L) {                    \
-        _property = Moon::GetValue<decltype(_property)>(); \
-        return 0;                                          \
+#define MOON_PROPERTY(_property)                      \
+    int Get_##_property(lua_State* L) {               \
+        Moon::Push(_property);                        \
+        return 1;                                     \
+    }                                                 \
+    int Set_##_property(lua_State* L) {               \
+        _property = Moon::Get<decltype(_property)>(); \
+        return 0;                                     \
     }
 
 #define MOON_METHOD(_name) int _name(lua_State* L)
@@ -1086,23 +1086,23 @@ public:
                     dump << ", ";
                 }
                 first = false;
-                dump << "\"" << GetValue<std::string>(-2) << "\": " << StackElementToStringDump(GetTop());
+                dump << "\"" << Get<std::string>(-2) << "\": " << StackElementToStringDump(GetTop());
                 Pop();
             }
             dump << "}";
             return dump.str();
         };
 
-        moon::LuaType type = GetValueType(index);
+        moon::LuaType type = GetType(index);
         switch (type) {
             case moon::LuaType::Boolean: {
-                return GetValue<bool>(index) ? "true" : "false";
+                return Get<bool>(index) ? "true" : "false";
             }
             case moon::LuaType::Number: {
-                return std::to_string(GetValue<double>(index));
+                return std::to_string(Get<double>(index));
             }
             case moon::LuaType::String: {
-                return "\"" + GetValue<std::string>(index) + "\"";
+                return "\"" + Get<std::string>(index) + "\"";
             }
             case moon::LuaType::Table: {
                 auto size = (size_t)lua_rawlen(s_state, index);
@@ -1153,7 +1153,7 @@ public:
      * @param index Position of stack to check.
      * @return LuaType
      */
-    static moon::LuaType GetValueType(int index = 1) { return static_cast<moon::LuaType>(lua_type(s_state, index)); }
+    static moon::LuaType GetType(int index = 1) { return static_cast<moon::LuaType>(lua_type(s_state, index)); }
 
     /**
      * @brief Get value from Lua stack.
@@ -1163,7 +1163,7 @@ public:
      * @return R
      */
     template <typename R>
-    static inline R GetValue(const int index = 1) {
+    static inline R Get(const int index = 1) {
         try {
             return moon::Marshalling::GetValue<R>(s_state, index);
         } catch (const std::exception& e) {
@@ -1182,9 +1182,9 @@ public:
      * @return R Lua global variable.
      */
     template <typename R>
-    static inline R GetGlobalVariable(const char* name) {
+    static inline R Get(const char* name) {
         lua_getglobal(s_state, name);
-        const R r = GetValue<R>(GetTop());
+        const R r = Get<R>(GetTop());
         lua_pop(s_state, 1);
         return r;
     }
@@ -1209,7 +1209,7 @@ public:
      * @param value Value pushed to Lua stack.
      */
     template <typename T>
-    static void PushValue(T value) {
+    static void Push(T value) {
         moon::Marshalling::PushValue(s_state, value);
     }
 
@@ -1221,8 +1221,8 @@ public:
      * @param value Value pushed to Lua stack.
      */
     template <typename T>
-    static void PushGlobalVariable(const char* name, T value) {
-        PushValue(value);
+    static void Push(const char* name, T value) {
+        Push(value);
         lua_setglobal(s_state, name);
     }
 
@@ -1236,7 +1236,7 @@ public:
      */
     template <typename T, typename... Args>
     static void PushValues(T&& first, Args&&... args) {
-        PushValue(std::forward<T>(first));
+        Push(std::forward<T>(first));
         PushValues(std::forward<Args>(args)...);
     }
 
@@ -1248,7 +1248,7 @@ public:
      */
     template <typename T>
     static void PushValues(T&& first) {
-        PushValue(std::forward<T>(first));
+        Push(std::forward<T>(first));
     }
 
     /**
@@ -1299,7 +1299,7 @@ public:
      * @return true Function successfully called.
      * @return false Unable to call function.
      */
-    static bool CallFunction() {
+    static bool Call() {
         if (!lua_isfunction(s_state, -1)) {
             return false;
         }
@@ -1313,7 +1313,7 @@ public:
      * @return true Function successfully called.
      * @return false Unable to call function.
      */
-    static bool CallFunction(const char* name) {
+    static bool Call(const char* name) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
             lua_pop(s_state, 1);
@@ -1331,7 +1331,7 @@ public:
      * @return false Unable to call function.
      */
     template <typename... Args>
-    static bool CallFunction(Args&&... args) {
+    static bool Call(Args&&... args) {
         if (!lua_isfunction(s_state, -1)) {
             return false;
         }
@@ -1349,7 +1349,7 @@ public:
      * @return false Unable to call function.
      */
     template <typename... Args>
-    static bool CallFunction(const char* name, Args&&... args) {
+    static bool Call(const char* name, Args&&... args) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
             lua_pop(s_state, 1);
@@ -1368,7 +1368,7 @@ public:
      * @return false Unable to call function.
      */
     template <typename T>
-    static bool CallFunction(T& lValue) {
+    static bool Call(T& lValue) {
         if (!lua_isfunction(s_state, -1)) {
             return false;
         }
@@ -1376,7 +1376,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(GetTop());
+        lValue = Get<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1391,7 +1391,7 @@ public:
      * @return false Unable to call function.
      */
     template <typename T>
-    static bool CallFunction(T& lValue, const char* name) {
+    static bool Call(T& lValue, const char* name) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
             lua_pop(s_state, 1);
@@ -1401,7 +1401,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(GetTop());
+        lValue = Get<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1417,7 +1417,7 @@ public:
      * @return false Unable to call function.
      */
     template <typename T, typename... Args>
-    static bool CallFunction(T& lValue, Args&&... args) {
+    static bool Call(T& lValue, Args&&... args) {
         if (!lua_isfunction(s_state, -1)) {
             return false;
         }
@@ -1426,7 +1426,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(GetTop());
+        lValue = Get<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1443,7 +1443,7 @@ public:
      * @return false Unable to call function.
      */
     template <typename T, typename... Args>
-    static bool CallFunction(T& lValue, const char* name, Args&&... args) {
+    static bool Call(T& lValue, const char* name, Args&&... args) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
             lua_pop(s_state, 1);
@@ -1454,7 +1454,7 @@ public:
             lValue = T{};
             return false;
         }
-        lValue = GetValue<T>(GetTop());
+        lValue = Get<T>(GetTop());
         lua_pop(s_state, 1);
         return true;
     }
@@ -1533,7 +1533,7 @@ public:
      * @return LuaFunction
      */
     static moon::LuaFunction CreateFunction(moon::LuaCFunction functionRef) {
-        PushValue(functionRef);
+        Push(functionRef);
         moon::LuaFunction function(s_state, -1);
         Pop();
         return function;
@@ -1560,7 +1560,7 @@ private:
      */
     static bool checkStatus(int status, const char* errMessage = "") {
         if (status != LUA_OK) {
-            const auto* msg = GetValue<const char*>(-1);
+            const auto* msg = Get<const char*>(-1);
             std::stringstream error;
             error << "Lua error: " << (msg != nullptr ? msg : errMessage);
             s_logger(error.str());
