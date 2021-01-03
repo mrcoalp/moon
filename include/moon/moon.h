@@ -44,6 +44,7 @@ class Moon;  // Forward declaration to use as friend class
 
 namespace moon {
 constexpr const char* LUA_REF_HOLDER_META_NAME{"LuaRefHolder"};
+constexpr const char* LUA_INVOKABLE_HOLDER_META_NAME{"LuaInvokableHolder"};
 
 using LuaCFunction = int (*)(lua_State*);
 
@@ -67,6 +68,11 @@ public:
     LuaRef() = default;
     explicit LuaRef(lua_State* L) : m_state(L) {}
     LuaRef(lua_State* L, int index) : m_state(L) { Load(index); }
+
+    static void Register(lua_State* L) {
+        luaL_newmetatable(L, moon::LUA_REF_HOLDER_META_NAME);
+        lua_pop(L, 1);
+    }
 
     /**
      * @brief Checks if key is set, and actions are allowed.
@@ -805,6 +811,14 @@ public:
         lua_setmetatable(L, -2);
     }
 
+    template <typename Class>
+    static void PushValue(lua_State* L, Class* value, const char* name) {
+        auto** a = static_cast<Class**>(lua_newuserdata(L, sizeof(Class*)));  // Create userdata
+        *a = value;
+        luaL_getmetatable(L, name);
+        lua_setmetatable(L, -2);
+    }
+
 private:
     /**
      * @brief Asserts the type of value.
@@ -832,6 +846,98 @@ private:
         }
     }
 };
+
+template <int... is>
+struct Indices {};
+
+template <int n, int... is>
+struct BuildIndices : BuildIndices<n - 1, n - 1, is...> {};
+
+template <int... is>
+struct BuildIndices<0, is...> : Indices<is...> {};
+
+class LuaInvokable {
+public:
+    virtual ~LuaInvokable() = default;
+
+    virtual int Call(lua_State*) const = 0;
+
+    static void Register(lua_State* L) {
+        luaL_newmetatable(L, moon::LUA_INVOKABLE_HOLDER_META_NAME);
+        int metatable = lua_gettop(L);
+
+        lua_pushstring(L, "__call");
+        lua_pushcfunction(L, &LuaInvokable::call);
+        lua_settable(L, metatable);
+
+        lua_pushstring(L, "__gc");
+        lua_pushcfunction(L, &LuaInvokable::gc);
+        lua_settable(L, metatable);
+
+        lua_pushstring(L, "__metatable");
+        lua_pushstring(L, "Access restricted");
+        lua_settable(L, metatable);
+
+        lua_pop(L, 1);
+    }
+
+protected:
+    static inline std::function<void(const std::string&)> s_logger;
+
+private:
+    static int call(lua_State* L) {
+        void* storage = lua_touserdata(L, 1);
+        auto* invokable = *static_cast<moon::LuaInvokable**>(storage);
+        lua_remove(L, 1);
+        return invokable->Call(L);
+    }
+
+    static int gc(lua_State* L) {
+        void* storage = lua_touserdata(L, 1);
+        auto* invokable = *static_cast<moon::LuaInvokable**>(storage);
+        delete invokable;
+        return 0;
+    }
+
+    friend class ::Moon;
+};
+
+template <typename Ret, typename... Args>
+class LuaInvokableCPP : public LuaInvokable {
+public:
+    LuaInvokableCPP(std::function<Ret(Args...)> func_) : func(std::move(func_)) {}
+
+    inline int Call(lua_State* L) const final { return callHelper(BuildIndices<sizeof...(Args)>{}, func, L); }
+
+private:
+    std::function<Ret(Args...)> func;
+
+    template <int... indices, typename RetHelper>
+    static int callHelper(Indices<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
+        try {
+            auto output = func(Marshalling::GetValue<Args>(L, indices + 1)...);
+            Marshalling::PushValue(L, output);
+        } catch (const std::exception& e) {
+            std::stringstream error;
+            error << "Moon error: " << e.what();
+            s_logger(error.str());
+            lua_pushnil(L);
+        }
+        return 1;
+    }
+
+    template <int... indices>
+    static int callHelper(Indices<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
+        try {
+            func(Marshalling::GetValue<Args>(L, indices + 1)...);
+        } catch (const std::exception& e) {
+            std::stringstream error;
+            error << "Moon error: " << e.what();
+            s_logger(error.str());
+        }
+        return 0;
+    }
+};
 }  // namespace moon
 
 /**
@@ -848,9 +954,10 @@ public:
     static void Init() {
         s_state = luaL_newstate();
         luaL_openlibs(s_state);
-        luaL_newmetatable(s_state, moon::LUA_REF_HOLDER_META_NAME);
-        Pop();
         s_logger = [](const auto&) {};
+        moon::LuaRef::Register(s_state);
+        moon::LuaInvokable::Register(s_state);
+        moon::LuaInvokable::s_logger = s_logger;
     }
 
     /**
@@ -873,7 +980,10 @@ public:
      *
      * @param logger Callback which is gonna be called every time an error is captured.
      */
-    static inline void SetLogger(const std::function<void(const std::string&)>& logger) { s_logger = logger; }
+    static inline void SetLogger(const std::function<void(const std::string&)>& logger) {
+        s_logger = logger;
+        moon::LuaInvokable::s_logger = s_logger;
+    }
 
     /**
      * @brief Get the Lua state object.
@@ -1125,8 +1235,8 @@ public:
      * @param args Rest of the value to push to Lua stack.
      */
     template <typename T, typename... Args>
-    static void PushValues(T first, Args&&... args) {
-        PushValue(first);
+    static void PushValues(T&& first, Args&&... args) {
+        PushValue(std::forward<T>(first));
         PushValues(std::forward<Args>(args)...);
     }
 
@@ -1137,8 +1247,8 @@ public:
      * @param first Value pushed to Lua stack.
      */
     template <typename T>
-    static void PushValues(T first) {
-        PushValue(first);
+    static void PushValues(T&& first) {
+        PushValue(std::forward<T>(first));
     }
 
     /**
@@ -1170,12 +1280,18 @@ public:
     }
 
     /**
-     * @brief Registers and exposes C++ anonymous function to Lua.
+     * @brief Registers and exposes C++ function to Lua.
      *
-     * @param name Name of the function to be used in Lua.
-     * @param fn Function pointer.
+     * @tparam Func Function type.
+     * @param name Function name to register in Lua.
+     * @param func Function to register.
      */
-    static void RegisterFunction(const char* name, moon::LuaCFunction fn) { lua_register(s_state, name, fn); }
+    template <typename Func>
+    static void RegisterFunction(const std::string& name, Func&& func) {
+        auto deducedFunc = std::function{std::forward<Func>(func)};
+        moon::Marshalling::PushValue(s_state, new moon::LuaInvokableCPP(deducedFunc), moon::LUA_INVOKABLE_HOLDER_META_NAME);
+        SetGlobalVariable(name.c_str());
+    }
 
     /**
      * @brief Calls Lua function (top of stack) without arguments.
