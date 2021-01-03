@@ -13,7 +13,7 @@ add_subdirectory(catch)
 
 set(BINARY ${CMAKE_PROJECT_NAME}_tst)
 
-set(TESTS basic.cpp scripting.cpp functions.cpp)
+set(TESTS basic.cpp scripting.cpp functions.cpp moontypes.cpp)
 
 add_executable(${BINARY} test-main.cpp ${TESTS})
 

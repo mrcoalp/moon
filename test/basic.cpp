@@ -81,7 +81,7 @@ TEST_CASE("loading files", "[basic]") {
     REQUIRE_FALSE(Moon::LoadFile("scripts/failed.lua"));
     REQUIRE(!error.empty());
     error.clear();
-    REQUIRE(Moon::LoadFile("scripts/luafunctions.lua"));
+    REQUIRE(Moon::LoadFile("scripts/passed.lua"));
     REQUIRE(error.empty());
     Moon::CloseState();
 }
