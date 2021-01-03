@@ -1,9 +1,8 @@
 enable_testing()
 
-set(CATCH_LIB_URL "https://github.com/catchorg/Catch2.git")
-set(CATCH_LIB_BRANCH "v2.x")
-
 if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/catch)
+    set(CATCH_LIB_URL "https://github.com/catchorg/Catch2.git")
+    set(CATCH_LIB_BRANCH "v2.x")
     execute_process(COMMAND git clone --recurse-submodules -b ${CATCH_LIB_BRANCH} --depth 1 ${CATCH_LIB_URL} ${CMAKE_CURRENT_SOURCE_DIR}/catch)
 endif ()
 
@@ -14,7 +13,7 @@ add_subdirectory(catch)
 
 set(BINARY ${CMAKE_PROJECT_NAME}_tst)
 
-set(TESTS scripting.cpp basic.cpp)
+set(TESTS basic.cpp scripting.cpp functions.cpp)
 
 add_executable(${BINARY} test-main.cpp ${TESTS})
 

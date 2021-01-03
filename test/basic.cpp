@@ -80,8 +80,9 @@ TEST_CASE("loading files", "[basic]") {
     REQUIRE_FALSE(Moon::LoadFile("failed.lua"));
     REQUIRE_FALSE(Moon::LoadFile("scripts/failed.lua"));
     REQUIRE(!error.empty());
-    REQUIRE(Moon::LoadFile("scripts/luavariables.lua"));
-    REQUIRE(Moon::GetGlobalVariable<bool>("bool"));
+    error.clear();
+    REQUIRE(Moon::LoadFile("scripts/luafunctions.lua"));
+    REQUIRE(error.empty());
     Moon::CloseState();
 }
 
@@ -285,5 +286,24 @@ TEST_CASE("push and get values, data containers", "[basic]") {
         END_STACK_GUARD
     }
 
+    Moon::CloseState();
+}
+
+TEST_CASE("get global variables", "[basic]") {
+    Moon::Init();
+    Moon::RunCode(R"(
+string = "passed"
+bool = true
+int = -1
+float = 12.6
+double = 3.14
+)");
+    BEGIN_STACK_GUARD
+    REQUIRE(Moon::GetGlobalVariable<std::string>("string") == "passed");
+    REQUIRE(Moon::GetGlobalVariable<bool>("bool"));
+    REQUIRE(Moon::GetGlobalVariable<int>("int") == -1);
+    REQUIRE(Moon::GetGlobalVariable<float>("float") == 12.6f);
+    REQUIRE(Moon::GetGlobalVariable<double>("double") == 3.14);
+    END_STACK_GUARD
     Moon::CloseState();
 }
