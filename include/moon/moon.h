@@ -14,9 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#define MOON_DECLARE_CLASS(_class) \
-    static bool GC;                \
-    static moon::Binding<_class> Binding;
+#define MOON_DECLARE_CLASS(_class) static moon::Binding<_class> Binding;
 
 #define MOON_PROPERTY(_property)                           \
     int Get_##_property(lua_State* L) {                    \
@@ -30,10 +28,11 @@
 
 #define MOON_METHOD(_name) int _name(lua_State* L)
 
-#define MOON_DEFINE_BINDING(_class, _gc) \
-    using BindingType = _class;          \
-    bool BindingType::GC = _gc;          \
+#define MOON_DEFINE_BINDING(_class) \
+    using BindingType = _class;     \
     moon::Binding<BindingType> BindingType::Binding = moon::Binding<BindingType>(#_class)
+
+#define MOON_REMOVE_GC .RemoveGC()
 
 #define MOON_ADD_METHOD(_method) .AddMethod({#_method, &BindingType::_method})
 
@@ -225,7 +224,7 @@ public:
      * @return true Function called with success.
      * @return false Function call returned errors or action is not valid.
      */
-    bool Call() const {
+    [[nodiscard]] bool Call() const {
         if (m_ref.IsLoaded()) {
             m_ref.Push();
             auto* state = m_ref.GetState();
@@ -372,10 +371,6 @@ public:
         luaL_newmetatable(L, T::Binding.GetName());
         int metatable = lua_gettop(L);
 
-        lua_pushstring(L, "__gc");
-        lua_pushcfunction(L, &LuaClass<T>::gc_obj);
-        lua_settable(L, metatable);
-
         lua_pushstring(L, "__tostring");
         lua_pushcfunction(L, &LuaClass<T>::to_string);
         lua_settable(L, metatable);
@@ -392,20 +387,24 @@ public:
         lua_pushcfunction(L, &LuaClass<T>::property_setter);
         lua_settable(L, metatable);
 
+        if (T::Binding.GetGC()) {
+            lua_pushstring(L, "__gc");
+            lua_pushcfunction(L, &LuaClass<T>::gc_obj);
+            lua_settable(L, metatable);
+        }
+
         unsigned i = 0;
         for (const auto& property : T::Binding.GetProperties()) {  // Register some properties in it
             lua_pushstring(L, property.name);                      // Having some string associated with them
-            lua_pushnumber(L, i);                                  // And an index of which property it is
+            lua_pushnumber(L, i++);                                // And an index of which property it is
             lua_settable(L, metatable);
-            ++i;
         }
 
         i = 0;
         for (const auto& method : T::Binding.GetMethods()) {
-            lua_pushstring(L, method.name);     // Register some functions in it
-            lua_pushnumber(L, i | (1u << 8u));  // Add a number indexing which func it is
+            lua_pushstring(L, method.name);       // Register some functions in it
+            lua_pushnumber(L, i++ | (1u << 8u));  // Add a number indexing which func it is
             lua_settable(L, metatable);
-            ++i;
         }
         lua_pop(L, 1);
     }
@@ -540,14 +539,10 @@ private:
      * @return int
      */
     static int gc_obj(lua_State* L) {
-        // NOTE(MPINTO): Defined in binding, whether or not to let Lua handle garbage collection
-        // Useful to use C++ existent object and avoid seg faults
-        if (T::GC) {
-            T** obj = static_cast<T**>(lua_touserdata(L, -1));
+        T** obj = static_cast<T**>(lua_touserdata(L, -1));
 
-            if (obj && *obj) {
-                delete (*obj);
-            }
+        if (obj && *obj) {
+            delete (*obj);
         }
 
         return 0;
@@ -599,6 +594,13 @@ public:
 
     [[nodiscard]] inline const auto& GetProperties() const { return m_properties; }
 
+    [[nodiscard]] inline bool GetGC() const { return m_gc; }
+
+    Binding& RemoveGC() {
+        m_gc = false;
+        return *this;
+    }
+
     Binding& AddMethod(LuaFunction func) {
         m_methods.push_back(func);
         return *this;
@@ -613,26 +615,19 @@ private:
     const char* m_name;
     std::vector<LuaFunction> m_methods;
     std::vector<LuaProperty> m_properties;
+    bool m_gc{true};
 };
 
 template <typename T>
-struct Number : std::false_type {};
-template <>
-struct Number<int> : std::true_type {};
-template <>
-struct Number<unsigned> : std::true_type {};
-template <>
-struct Number<float> : std::true_type {};
-template <>
-struct Number<double> : std::true_type {};
-template <typename T>
-using IsNumber = std::enable_if_t<Number<T>::value, T>;
-template <typename T>
 using IsBool = std::enable_if_t<std::is_same_v<T, bool>, T>;
+template <typename T>
+using IsNumber = std::enable_if_t<std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, T>;
 template <typename T>
 using IsString = std::enable_if_t<std::is_same_v<T, std::string>, T>;
 template <typename T>
 using IsCString = std::enable_if_t<std::is_same_v<T, const char*>, T>;
+template <typename T>
+using IsLuaRef = std::enable_if_t<std::is_same_v<T, LuaRef>, T>;
 template <typename T>
 using IsLuaFunction = std::enable_if_t<std::is_same_v<T, LuaFunction>, T>;
 template <typename T>
@@ -659,15 +654,15 @@ using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<
 class Marshalling {
 public:
     template <typename R>
-    static IsNumber<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isnumber(L, index));
-        return static_cast<R>(lua_tonumber(L, index));
-    }
-
-    template <typename R>
     static IsBool<R> GetValue(lua_State* L, int index) {
         assertType(lua_isboolean(L, index));
         return lua_toboolean(L, index) != 0;
+    }
+
+    template <typename R>
+    static IsNumber<R> GetValue(lua_State* L, int index) {
+        assertType(lua_isnumber(L, index));
+        return static_cast<R>(lua_tonumber(L, index));
     }
 
     template <typename R>
@@ -682,6 +677,11 @@ public:
     static IsCString<R> GetValue(lua_State* L, int index) {
         assertType(lua_isstring(L, index));
         return lua_tostring(L, index);
+    }
+
+    template <typename R>
+    static IsLuaRef<R> GetValue(lua_State* L, int index) {
+        return {L, index};
     }
 
     template <typename R>
@@ -741,15 +741,15 @@ public:
         return map;
     }
 
+    static void PushValue(lua_State* L, bool value) { lua_pushboolean(L, (int)value); }
+
     static void PushValue(lua_State* L, int value) { lua_pushinteger(L, value); }
+
+    static void PushValue(lua_State* L, unsigned value) { lua_pushinteger(L, value); }
 
     static void PushValue(lua_State* L, float value) { lua_pushnumber(L, value); }
 
     static void PushValue(lua_State* L, double value) { lua_pushnumber(L, value); }
-
-    static void PushValue(lua_State* L, bool value) { lua_pushboolean(L, (int)value); }
-
-    static void PushValue(lua_State* L, unsigned value) { lua_pushinteger(L, value); }
 
     static void PushValue(lua_State* L, const std::string& value) { lua_pushstring(L, value.c_str()); }
 
@@ -850,6 +850,7 @@ public:
         luaL_openlibs(s_state);
         luaL_newmetatable(s_state, moon::LUA_REF_HOLDER_META_NAME);
         Pop();
+        s_logger = [](const auto&) {};
     }
 
     /**
@@ -1431,7 +1432,7 @@ private:
     /**
      * @brief Logger callback to be defined by client.
      */
-    inline static std::function<void(const std::string&)> s_logger{[](const std::string&) {}};
+    inline static std::function<void(const std::string&)> s_logger;
 
     /**
      * @brief Checks for lua status and returns if ok or not.
@@ -1443,7 +1444,7 @@ private:
      */
     static bool checkStatus(int status, const char* errMessage = "") {
         if (status != LUA_OK) {
-            auto* msg = GetValue<const char*>(-1);
+            const auto* msg = GetValue<const char*>(-1);
             std::stringstream error;
             error << "Lua error: " << (msg != nullptr ? msg : errMessage);
             s_logger(error.str());
