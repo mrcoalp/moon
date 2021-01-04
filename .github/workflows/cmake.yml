@@ -31,5 +31,6 @@ jobs:
           name: test-results-coverage
           path: |
             test_results.xml
-            moon_coverage/
+            moon_coverage_html/
+            moon_coverage.xml
           retention-days: 5
