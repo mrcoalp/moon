@@ -21,12 +21,23 @@ add_test(NAME ${BINARY} COMMAND ${BINARY})
 
 if (CMAKE_COMPILER_IS_GNUCXX)
     set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-
     include(CodeCoverage)
-    setup_target_for_coverage(${CMAKE_PROJECT_NAME}_coverage ${BINARY} coverage)
 
-    SET(CMAKE_CXX_FLAGS "-g -O0 -fprofile-arcs -ftest-coverage")
-    SET(CMAKE_C_FLAGS "-g -O0 -fprofile-arcs -ftest-coverage")
+    if (GCOVR_PATH)
+        append_coverage_compiler_flags()
+
+        set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O0")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+
+        set(COVERAGE_EXCLUDES test)
+
+        setup_target_for_coverage_gcovr_html(NAME ${CMAKE_PROJECT_NAME}_coverage
+                                EXECUTABLE ${BINARY}
+                                DEPENDENCIES ${BINARY} moon
+                                BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)
+    else ()
+        message("-- gcovr not found, coverage will not be included")
+    endif ()
 endif ()
 
 target_link_libraries(${BINARY} PRIVATE Catch2 moon)

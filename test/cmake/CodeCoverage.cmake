@@ -405,16 +405,16 @@ function(setup_target_for_coverage_gcovr_html)
         ${Coverage_EXECUTABLE} ${Coverage_EXECUTABLE_ARGS}
 
         # Create folder
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/${Coverage_NAME}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/${Coverage_NAME}
 
         # Running gcovr
         COMMAND ${GCOVR_PATH} --html --html-details
             -r ${BASEDIR} ${GCOVR_EXCLUDE_ARGS}
-            --object-directory=${PROJECT_BINARY_DIR}
+            --object-directory=${CMAKE_CURRENT_BINARY_DIR}
             -o ${Coverage_NAME}/index.html
 
-        BYPRODUCTS ${PROJECT_BINARY_DIR}/${Coverage_NAME}  # report directory
-        WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+        BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/${Coverage_NAME}  # report directory
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         DEPENDS ${Coverage_DEPENDENCIES}
         VERBATIM # Protect arguments to commands
         COMMENT "Running gcovr to produce HTML code coverage report."
