@@ -27,6 +27,8 @@ jobs:
 
       - name: Upload test results and coverage
         uses: actions/upload-artifact@v2
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           name: test-results-coverage
           path: |
@@ -34,3 +36,4 @@ jobs:
             moon_coverage_html/
             moon_coverage.xml
           retention-days: 5
+        run: bash <(curl -s https://codecov.io/bash) -f moon_coverage.xml
