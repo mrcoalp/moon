@@ -31,7 +31,12 @@ if (CMAKE_COMPILER_IS_GNUCXX)
 
         set(COVERAGE_EXCLUDES test)
 
-        setup_target_for_coverage_gcovr_html(NAME ${CMAKE_PROJECT_NAME}_coverage
+        setup_target_for_coverage_gcovr_xml(NAME ${CMAKE_PROJECT_NAME}_coverage
+                EXECUTABLE ${BINARY}
+                DEPENDENCIES ${BINARY} moon
+                BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)
+
+        setup_target_for_coverage_gcovr_html(NAME ${CMAKE_PROJECT_NAME}_coverage_html
                 EXECUTABLE ${BINARY}
                 DEPENDENCIES ${BINARY} moon
                 BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)

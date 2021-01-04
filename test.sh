@@ -45,10 +45,15 @@ cd build/Debug/test || exit 1
 ./moon_tst || exit 1
 
 if [ $COVERAGE = 1 ]; then
-  # Output to file
   ./moon_tst -o "$OUT"/test_results.xml -r junit
-  make moon_coverage || exit 1
-  mv moon_coverage "$OUT"
+
+  rm -rf "$OUT"/moon_coverage.xml
+  make moon_coverage || echo "Could not make moon_coverage_xml"
+  mv moon_coverage.xml "$OUT"
+
+  rm -rf "$OUT"/moon_coverage_html
+  make moon_coverage_html || echo "Could not make moon_coverage_html"
+  mv moon_coverage_html "$OUT"
 fi
 
 exit 0

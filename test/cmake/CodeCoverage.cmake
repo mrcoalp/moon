@@ -335,10 +335,10 @@ function(setup_target_for_coverage_gcovr_xml)
         # Running gcovr
         COMMAND ${GCOVR_PATH} --xml
             -r ${BASEDIR} ${GCOVR_EXCLUDE_ARGS}
-            --object-directory=${PROJECT_BINARY_DIR}
+            --object-directory=${CMAKE_CURRENT_BINARY_DIR}
             -o ${Coverage_NAME}.xml
         BYPRODUCTS ${Coverage_NAME}.xml
-        WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         DEPENDS ${Coverage_DEPENDENCIES}
         VERBATIM # Protect arguments to commands
         COMMENT "Running gcovr to produce Cobertura code coverage report."
