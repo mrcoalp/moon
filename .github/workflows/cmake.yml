@@ -11,20 +11,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Build Debug
-      run: bash build.sh -t
+      - name: Prepare environment
+        run: sudo apt-get install gcovr -y
 
-    - name: Build Release
-      run: bash build.sh -r -t
-    
-    - name: Test
-      run: bash test.sh -c
-      
-    - name: Upload test results
-      uses: actions/upload-artifact@v2
-      with:
-        name: test-results
-        path: test_coverage.xml
-        retention-days: 5
+      - name: Build Debug
+        run: bash build.sh -t
+
+      - name: Build Release
+        run: bash build.sh -r -t
+
+      - name: Test
+        run: bash test.sh -c
+
+      - name: Upload test results and coverage
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-results-coverage
+          path: |
+            test_results.xml
+            moon_coverage_html/
+            moon_coverage.xml
+          retention-days: 5
+
+      - name: Upload code coverage to codecov
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: bash <(curl -s https://codecov.io/bash) -f moon_coverage.xml

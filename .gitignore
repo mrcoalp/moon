@@ -14,7 +14,8 @@ build/
 logs/
 tidy_coverage.txt
 format_coverage.txt
-test_coverage.xml
+test_results.xml
 compile_commands.json
 lua/
-test/catch
+moon_coverage_html/
+moon_coverage.xml
