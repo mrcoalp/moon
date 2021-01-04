@@ -26,15 +26,15 @@ if (CMAKE_COMPILER_IS_GNUCXX)
     if (GCOVR_PATH)
         append_coverage_compiler_flags()
 
-        set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -O0")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
 
         set(COVERAGE_EXCLUDES test)
 
         setup_target_for_coverage_gcovr_html(NAME ${CMAKE_PROJECT_NAME}_coverage
-                                EXECUTABLE ${BINARY}
-                                DEPENDENCIES ${BINARY} moon
-                                BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)
+                EXECUTABLE ${BINARY}
+                DEPENDENCIES ${BINARY} moon
+                BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)
     else ()
         message("-- gcovr not found, coverage will not be included")
     endif ()

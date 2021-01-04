@@ -41,11 +41,14 @@ done
 
 OUT=$(pwd)
 cd build/Debug/test || exit 1
-if [ $COVERAGE = 1 ]; then
-  # Output to file without color codes
-  ./moon_tst -o "$OUT"/test_coverage.xml -r junit
-fi
 
 ./moon_tst || exit 1
+
+if [ $COVERAGE = 1 ]; then
+  # Output to file
+  ./moon_tst -o "$OUT"/test_results.xml -r junit
+  make moon_coverage || exit 1
+  mv moon_coverage "$OUT"
+fi
 
 exit 0
