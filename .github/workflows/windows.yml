@@ -1,0 +1,24 @@
+name: windows
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build and test Debug
+        run: |
+          platform-scripts\windows\build -t
+          platform-scripts\windows\test
+
+      - name: Build and test Release
+        run: |
+          platform-scripts\windows\build -r -t
+          platform-scripts\windows\test -r
