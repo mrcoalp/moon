@@ -2,7 +2,8 @@
 
 [![GitHub](https://img.shields.io/github/license/mrcoalp/moon)](LICENSE)
 [![Build Status](https://travis-ci.org/mrcoalp/moon.svg?branch=main)](https://travis-ci.org/mrcoalp/moon)
-[![CMake](https://github.com/mrcoalp/moon/workflows/CMake/badge.svg)](https://github.com/mrcoalp/moon/actions?query=workflow%3ACMake)
+[![linux](https://github.com/mrcoalp/moon/workflows/linux/badge.svg)](https://github.com/mrcoalp/moon/actions?query=workflow%3Alinux)
+[![windows](https://github.com/mrcoalp/moon/workflows/windows/badge.svg)](https://github.com/mrcoalp/moon/actions?query=workflow%3Awindows)
 [![codecov](https://codecov.io/gh/mrcoalp/moon/branch/main/graph/badge.svg?token=70AAHGSCDY)](https://codecov.io/gh/mrcoalp/moon)
 
 ## WIP
