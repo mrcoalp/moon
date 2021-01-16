@@ -8,7 +8,7 @@ TARGET=all
 BUILD_SYSTEM="Unix Makefiles"
 # Only generate compilation db
 CHECK_ONLY=0
-# Wether or not to build tests
+# Whether or not to build tests
 TESTS=OFF
 # Whether or not to generate documentation
 DOC=OFF
@@ -131,7 +131,7 @@ if [ $CHECK_ONLY = 1 ]; then
   exit 0
 fi
 
-cmake --build . -j $JOBS --target $TARGET
+cmake --build . --config $CONFIGURATION -j "$JOBS" --target $TARGET
 
 # Exit script successfully
 exit 0

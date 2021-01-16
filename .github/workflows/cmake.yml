@@ -17,13 +17,13 @@ jobs:
         run: sudo apt-get install gcovr -y
 
       - name: Build Debug
-        run: bash build.sh -t
+        run: bash platform-scripts/linux/build.sh -t
 
       - name: Build Release
-        run: bash build.sh -r -t
+        run: bash platform-scripts/linux/build.sh -r -t
 
       - name: Test
-        run: bash test.sh -c
+        run: bash platform-scripts/linux/test.sh -c
 
       - name: Upload test results and coverage
         uses: actions/upload-artifact@v2
