@@ -13,12 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Build and test Debug
-        run: |
-          platform-scripts\windows\build -t
-          platform-scripts\windows\test
+      - name: Build Debug
+        run: platform-scripts\windows\build -t
 
-      - name: Build and test Release
-        run: |
-          platform-scripts\windows\build -r -t
-          platform-scripts\windows\test -r
+      - name: Test Debug
+        run: platform-scripts\windows\test
+
+      - name: Build Release
+        run: platform-scripts\windows\build -r -t
+
+      - name: Test Release
+        run: platform-scripts\windows\test -r
