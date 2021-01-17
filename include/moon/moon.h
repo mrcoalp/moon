@@ -1229,26 +1229,12 @@ public:
     /**
      * @brief Recursive helper method to push multiple values to Lua stack.
      *
-     * @tparam T Value type.
-     * @tparam Args Rest of the values types.
-     * @param first Value pushed to Lua stack.
-     * @param args Rest of the value to push to Lua stack.
+     * @tparam Args Values types.
+     * @param args Values to push to Lua stack.
      */
-    template <typename T, typename... Args>
-    static void PushValues(T&& first, Args&&... args) {
-        Push(std::forward<T>(first));
-        PushValues(std::forward<Args>(args)...);
-    }
-
-    /**
-     * @brief Stop method to recursive PushValues overload.
-     *
-     * @tparam T Value type.
-     * @param first Value pushed to Lua stack.
-     */
-    template <typename T>
-    static void PushValues(T&& first) {
-        Push(std::forward<T>(first));
+    template <typename... Args>
+    static void PushValues(Args&&... args) {
+        (Push(std::forward<Args>(args)), ...);
     }
 
     /**

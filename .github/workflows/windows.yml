@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build-static:
     runs-on: windows-latest
 
     steps:
@@ -21,6 +21,24 @@ jobs:
 
       - name: Build Release
         run: platform-scripts\windows\build -r -t
+
+      - name: Test Release
+        run: platform-scripts\windows\test -r
+
+  build-shared:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build Debug
+        run: platform-scripts\windows\build -t --shared
+
+      - name: Test Debug
+        run: platform-scripts\windows\test
+
+      - name: Build Release
+        run: platform-scripts\windows\build -r -t --shared
 
       - name: Test Release
         run: platform-scripts\windows\test -r
