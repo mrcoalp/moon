@@ -1167,9 +1167,7 @@ public:
         try {
             return moon::Marshalling::GetValue<R>(s_state, index);
         } catch (const std::exception& e) {
-            std::stringstream error;
-            error << "Moon error: " << e.what();
-            s_logger(error.str());
+            error(e.what());
         }
         return {};
     }
@@ -1287,6 +1285,7 @@ public:
      */
     static bool Call() {
         if (!lua_isfunction(s_state, -1)) {
+            error("Tried to call a non function value!");
             return false;
         }
         return checkStatus(lua_pcall(s_state, 0, 0, 0), "Failed to call LUA function");
@@ -1302,7 +1301,8 @@ public:
     static bool Call(const char* name) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
-            lua_pop(s_state, 1);
+            error("Tried to call a non function value!");
+            Pop();
             return false;
         }
         return checkStatus(lua_pcall(s_state, 0, 0, 0), "Failed to call LUA function");
@@ -1319,6 +1319,7 @@ public:
     template <typename... Args>
     static bool Call(Args&&... args) {
         if (!lua_isfunction(s_state, -1)) {
+            error("Tried to call a non function value!");
             return false;
         }
         PushValues(std::forward<Args>(args)...);
@@ -1338,7 +1339,7 @@ public:
     static bool Call(const char* name, Args&&... args) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
-            lua_pop(s_state, 1);
+            Pop();
             return false;
         }
         PushValues(std::forward<Args>(args)...);
@@ -1380,11 +1381,10 @@ public:
     static bool Call(T& lValue, const char* name) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
-            lua_pop(s_state, 1);
+            Pop();
             return false;
         }
         if (!checkStatus(lua_pcall(s_state, 0, 1, 0), "Failed to call LUA function")) {
-            lValue = T{};
             return false;
         }
         lValue = Get<T>(GetTop());
@@ -1432,12 +1432,11 @@ public:
     static bool Call(T& lValue, const char* name, Args&&... args) {
         lua_getglobal(s_state, name);
         if (!lua_isfunction(s_state, -1)) {
-            lua_pop(s_state, 1);
+            Pop();
             return false;
         }
         PushValues(std::forward<Args>(args)...);
         if (!checkStatus(lua_pcall(s_state, sizeof...(Args), 1, 0), "Failed to call LUA function")) {
-            lValue = T{};
             return false;
         }
         lValue = Get<T>(GetTop());
@@ -1547,12 +1546,19 @@ private:
     static bool checkStatus(int status, const char* errMessage = "") {
         if (status != LUA_OK) {
             const auto* msg = Get<const char*>(-1);
+            Pop();
             std::stringstream error;
             error << "Lua error: " << (msg != nullptr ? msg : errMessage);
             s_logger(error.str());
             return false;
         }
         return true;
+    }
+
+    static void error(const std::string& message) {
+        std::stringstream error;
+        error << "Moon error: " << message;
+        s_logger(error.str());
     }
 };
 

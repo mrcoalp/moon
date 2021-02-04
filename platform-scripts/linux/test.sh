@@ -42,8 +42,6 @@ done
 OUT=$(pwd)
 cd build/Debug/test || exit 1
 
-./moon_tst || exit 1
-
 if [ $COVERAGE = 1 ]; then
   ./moon_tst -o "$OUT"/test_results.xml -r junit
 
@@ -55,5 +53,7 @@ if [ $COVERAGE = 1 ]; then
   make moon_coverage_html || echo "Could not make moon_coverage_html"
   mv moon_coverage_html "$OUT"
 fi
+
+./moon_tst || exit 1
 
 exit 0

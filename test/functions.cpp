@@ -42,6 +42,24 @@ TEST_CASE("call functions", "[functions]") {
         BEGIN_STACK_GUARD
         Moon::RunCode("return function(passed) assert(passed) end");
         REQUIRE(Moon::Call(true));
+        Moon::RunCode("return function() assert(false) end");
+        REQUIRE_FALSE(Moon::Call());
+        END_STACK_GUARD
+    }
+
+    SECTION("call function errors") {
+        BEGIN_STACK_GUARD
+        REQUIRE_FALSE(Moon::Call());
+        REQUIRE_FALSE(Moon::Call(false, 2));
+        REQUIRE_FALSE(Moon::Call("failed"));
+        REQUIRE_FALSE(Moon::Call("failed", 1, 2, 3));
+        bool a = false;
+        REQUIRE_FALSE(Moon::Call(a, "failed"));
+        REQUIRE_FALSE(Moon::Call(a, "failed", 1, 2, 3));
+        REQUIRE(Moon::RunCode("function failed() assert(false) end"));
+        REQUIRE_FALSE(Moon::Call(a, "failed"));
+        REQUIRE_FALSE(Moon::Call(a, "failed", 1, 2, 3));
+        REQUIRE_FALSE(a);
         END_STACK_GUARD
     }
 

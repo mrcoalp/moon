@@ -73,6 +73,15 @@ TEST_CASE("print stack elements", "[basic]") {
     Moon::CloseState();
 }
 
+TEST_CASE("run code with and without errors", "[basic]") {
+    Moon::Init();
+    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
+    REQUIRE(Moon::RunCode("assert(true)"));
+    REQUIRE_FALSE(Moon::RunCode("assert(false)"));
+    REQUIRE_FALSE(Moon::RunCode("&"));
+    Moon::CloseState();
+}
+
 TEST_CASE("loading files", "[basic]") {
     Moon::Init();
     std::string error;
