@@ -504,7 +504,7 @@ private:
 
             if ((_index >> 8u) != 0u) {  // Try to set a func
                 char c[128];
-#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+#if !defined(__MINGW32__) && (defined(_WIN32) || defined(__WIN32__) || defined(WIN32))
                 sprintf_s(c, "Moon: Trying to set the method [%s] of class [%s]", (*obj)->T::Binding.GetMethods()[_index ^ (1u << 8u)].name,
                           T::Binding.GetName());
 #else

@@ -49,7 +49,7 @@ target_link_libraries(${BINARY} PRIVATE Catch2 moon)
 # Copy scripts folder to binary destination
 file(COPY scripts DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
-if (MSVC AND BUILD_SHARED_LIBS)
+if ((MSVC OR MINGW) AND BUILD_SHARED_LIBS)
     set(LUA_BINARY_DIR "${PROJECT_BINARY_DIR}/lua")
     add_custom_command(TARGET ${BINARY} POST_BUILD COMMAND ${CMAKE_COMMAND} -DBUILD_TYPE=${CMAKE_BUILD_TYPE} -DSRC_PATH=${LUA_BINARY_DIR} -DDEST_PATH=$<TARGET_FILE_DIR:${BINARY}> -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyLUA.cmake)
 endif ()
