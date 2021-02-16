@@ -15,6 +15,14 @@ TEST_CASE("initialize and close state", "[basic]") {
 
 TEST_CASE("index operations", "[basic]") {
     Moon::Init();
+    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
+
+    SECTION("pop stack protection", "[basic]") {
+        BEGIN_STACK_GUARD
+        Moon::Pop();
+        Moon::Pop(4);
+        END_STACK_GUARD
+    }
 
     SECTION("check for valid index") {
         BEGIN_STACK_GUARD
@@ -254,12 +262,15 @@ TEST_CASE("push and get values, data containers", "[basic]") {
     SECTION("push and get an unordered map") {
         static auto randomNumber = []() -> int { return std::rand() % 100; };
         moon::LuaMap<int> map;
+        std::vector<std::string> keys;
         for (int i = 0; i < 100; ++i) {
             map.emplace(std::to_string(i), randomNumber());
+            keys.emplace_back(std::to_string(i));
         }
         BEGIN_STACK_GUARD
         Moon::Push(map);
         auto m = Moon::Get<moon::LuaMap<int>>(-1);
+        REQUIRE(Moon::EnsureMapKeys(keys, m));
         REQUIRE(map.at("1") == m.at("1"));
         Moon::Pop();
         END_STACK_GUARD
@@ -298,7 +309,7 @@ TEST_CASE("push and get values, data containers", "[basic]") {
     Moon::CloseState();
 }
 
-TEST_CASE("get global variables", "[basic]") {
+TEST_CASE("set and get global variables", "[basic]") {
     Moon::Init();
     Moon::RunCode(R"(
 string = "passed"
@@ -307,12 +318,16 @@ int = -1
 float = 12.6
 double = 3.14
 )");
+    Moon::Push("constChar", "passes");
     BEGIN_STACK_GUARD
     REQUIRE(Moon::Get<std::string>("string") == "passed");
     REQUIRE(Moon::Get<bool>("bool"));
     REQUIRE(Moon::Get<int>("int") == -1);
     REQUIRE(Moon::Get<float>("float") == 12.6f);
     REQUIRE(Moon::Get<double>("double") == 3.14);
+    REQUIRE(std::string(Moon::Get<const char*>("constChar")) == "passes");
+    Moon::CleanGlobalVariable("double");
+    REQUIRE_FALSE(Moon::Get<double>("double") == 3.14);
     END_STACK_GUARD
     Moon::CloseState();
 }

@@ -1,4 +1,5 @@
 #include <catch2/catch.hpp>
+#include <utility>
 
 #include "moon/moon.h"
 #include "stackguard.h"
@@ -108,7 +109,7 @@ TEST_CASE("register C++ functions, lambdas", "[functions][basic]") {
     SECTION("register lambda functions with args") {
         BEGIN_STACK_GUARD
         std::vector<int> vec;
-        Moon::RegisterFunction("TestCPPStaticFunction", [&vec](std::vector<int> vec_) { vec = vec_; });
+        Moon::RegisterFunction("TestCPPStaticFunction", [&vec](std::vector<int> vec_) { vec = std::move(vec_); });
         REQUIRE(Moon::RunCode("TestCPPStaticFunction({1, 2, 3})"));
         REQUIRE(vec[1] == 2);
         END_STACK_GUARD

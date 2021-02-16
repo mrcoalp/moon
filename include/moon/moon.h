@@ -1221,7 +1221,7 @@ public:
     template <typename T>
     static void Push(const char* name, T value) {
         Push(value);
-        lua_setglobal(s_state, name);
+        SetGlobalVariable(name);
     }
 
     /**
@@ -1250,7 +1250,16 @@ public:
      *
      * @param nrOfValues Quantity of elements to pop from stack
      */
-    static void Pop(int nrOfElements = 1) { lua_pop(s_state, nrOfElements); }
+    static void Pop(int nrOfElements = 1) {
+        while (nrOfElements > 0) {
+            if (GetTop() <= 0) {
+                error("Tried to pop stack but was empty already!");
+                break;
+            }
+            lua_pop(s_state, 1);
+            --nrOfElements;
+        }
+    }
 
     /**
      * @brief Registers and exposes C++ class to Lua.
