@@ -11,20 +11,27 @@ TEST_CASE("moon::LuaRef", "[types][basic]") {
         BEGIN_STACK_GUARD
 
         Moon::RunCode("return {x = 2, y = 'passed', z = {g = true, w = {1, 2, 3}, r = 3.14}}");
-        auto m = Moon::Get<moon::LuaRef>(-1);
+        auto m = Moon::Get<moon::BasicReference>(-1);
         REQUIRE(m.IsLoaded());
         REQUIRE(m.GetType() == moon::LuaType::Table);
         m.Unload();
         REQUIRE_FALSE(m.IsLoaded());
 
         Moon::RunCode("return function() print('passed') end");
-        auto f = Moon::Get<moon::LuaRef>(-1);
+        auto f = Moon::Get<moon::BasicReference>(-1);
         REQUIRE(f.IsLoaded());
         REQUIRE(f.GetType() == moon::LuaType::Function);
         f.Unload();
         REQUIRE_FALSE(f.IsLoaded());
 
-        Moon::Pop(2);
+        Moon::Push(32);
+        auto n = Moon::Get<moon::BasicReference>(-1);
+        REQUIRE(n.IsLoaded());
+        REQUIRE(n.GetType() == moon::LuaType::Number);
+        n.Unload();
+        REQUIRE_FALSE(n.IsLoaded());
+
+        Moon::Pop(3);
         END_STACK_GUARD
     }
 
@@ -32,7 +39,7 @@ TEST_CASE("moon::LuaRef", "[types][basic]") {
         BEGIN_STACK_GUARD
 
         Moon::RunCode("return function() print('passed') end");
-        auto f = Moon::Get<moon::LuaRef>(-1);
+        auto f = Moon::Get<moon::BasicReference>(-1);
         REQUIRE(f.IsLoaded());
         REQUIRE(f.GetType() == moon::LuaType::Function);
         Moon::Push(f);
