@@ -7,6 +7,6 @@ language: cpp
 compiler: gcc
 
 script:
-  - bash platform-scripts/linux/build.sh -t
-  - bash platform-scripts/linux/build.sh -r -t
-  - bash platform-scripts/linux/test.sh
+  - bash platform-scripts/linux/build.sh -t --coverage
+  - bash platform-scripts/linux/build.sh -r -t --coverage
+  - bash platform-scripts/linux/test.sh --coverage

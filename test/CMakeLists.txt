@@ -11,6 +11,15 @@ set(CATCH_INSTALL_DOCS OFF)
 set(CATCH_INSTALL_HELPERS OFF)
 add_subdirectory(catch)
 
+option(MOON_COVERAGE OFF)
+
+if (CMAKE_COMPILER_IS_GNUCXX AND MOON_COVERAGE)
+    set(COVERAGE_COMPILER_FLAGS "-fprofile-arcs -ftest-coverage -fPIC -O0")
+    message("-- Adding coverage compiler flags: ${COVERAGE_COMPILER_FLAGS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COVERAGE_COMPILER_FLAGS}")
+endif ()
+
 set(BINARY ${CMAKE_PROJECT_NAME}_tst)
 
 set(TESTS basic.cpp scripting.cpp functions.cpp moontypes.cpp)
@@ -18,31 +27,6 @@ set(TESTS basic.cpp scripting.cpp functions.cpp moontypes.cpp)
 add_executable(${BINARY} test-main.cpp ${TESTS})
 
 add_test(NAME ${BINARY} COMMAND ${BINARY})
-
-if (CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-    include(CodeCoverage)
-
-    append_coverage_compiler_flags()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
-
-    if (GCOVR_PATH)
-        set(COVERAGE_EXCLUDES test)
-
-        setup_target_for_coverage_gcovr_xml(NAME ${CMAKE_PROJECT_NAME}_coverage
-                EXECUTABLE ${BINARY}
-                DEPENDENCIES ${BINARY} moon
-                BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)
-
-        setup_target_for_coverage_gcovr_html(NAME ${CMAKE_PROJECT_NAME}_coverage_html
-                EXECUTABLE ${BINARY}
-                DEPENDENCIES ${BINARY} moon
-                BASE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/)
-    else ()
-        message("-- gcovr not found, coverage targets will not be included")
-    endif ()
-endif ()
 
 target_link_libraries(${BINARY} PRIVATE Catch2 moon)
 # Copy scripts folder to binary destination

@@ -45,13 +45,16 @@ cd build/Debug/test || exit 1
 if [ $COVERAGE = 1 ]; then
   ./moon_tst -o "$OUT"/test_results.xml -r junit
 
-  rm -rf "$OUT"/moon_coverage.xml
-  make moon_coverage || echo "Could not make moon_coverage_xml"
-  mv moon_coverage.xml "$OUT"
+  mkdir moon_coverage_html
+
+  gcovr --html --html-details -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage_html/index.html || echo "Could not generate html coverage report"
+  gcovr --xml -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage.xml || echo "Could not generate xml coverage report"
 
   rm -rf "$OUT"/moon_coverage_html
-  make moon_coverage_html || echo "Could not make moon_coverage_html"
-  mv moon_coverage_html "$OUT"
+  rm -rf "$OUT"/moon_coverage.xml
+
+  mv moon_coverage_html "$OUT" && echo "Open $OUT/moon_coverage_html/index.html in a browser"
+  mv moon_coverage.xml "$OUT"
 fi
 
 ./moon_tst || exit 1
