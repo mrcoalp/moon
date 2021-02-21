@@ -17,5 +17,5 @@ format_coverage.txt
 test_results.xml
 compile_commands.json
 lua/
-moon_coverage_html/
+moon_coverage.html
 moon_coverage.xml

@@ -17,13 +17,13 @@ jobs:
         run: sudo apt-get install gcovr -y
 
       - name: Build Debug
-        run: bash platform-scripts/linux/build.sh -t
+        run: bash platform-scripts/linux/build.sh -t --coverage
 
       - name: Build Release
-        run: bash platform-scripts/linux/build.sh -r -t
+        run: bash platform-scripts/linux/build.sh -r -t --coverage
 
       - name: Test
-        run: bash platform-scripts/linux/test.sh -c
+        run: bash platform-scripts/linux/test.sh --coverage
 
       - name: Upload test results and coverage
         uses: actions/upload-artifact@v2
@@ -31,7 +31,7 @@ jobs:
           name: test-results-coverage
           path: |
             test_results.xml
-            moon_coverage_html/
+            moon_coverage.html
             moon_coverage.xml
           retention-days: 5
 

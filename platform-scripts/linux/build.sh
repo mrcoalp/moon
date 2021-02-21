@@ -12,6 +12,8 @@ CHECK_ONLY=0
 TESTS=OFF
 # Whether or not to generate documentation
 DOC=OFF
+# Whether or not to add coverage compiler flags
+COV=OFF
 # Number of jobs
 JOBS=4
 # Lib type
@@ -38,6 +40,7 @@ Options
     --clang             - Use Clang compiler
     --check             - Only generate compilation database
     -t | --tests        - Build tests
+    --coverage          - Add coverage compiler flags
     --doc               - Generate docs"
 }
 
@@ -84,6 +87,9 @@ while test $# -gt 0; do
   -t | --tests)
     TESTS=ON
     ;;
+  --coverage)
+    COV=ON
+    ;;
   --doc)
     DOC=ON
     ;;
@@ -125,7 +131,7 @@ fi
 cd $CONFIGURATION || exit 1
 
 # Run CMake
-cmake -DBUILD_SHARED_LIBS=$SHARED_LIB -DMOON_BUILD_TESTS=$TESTS -DMOON_BUILD_DOC=$DOC ../.. -G"$BUILD_SYSTEM" -DCMAKE_BUILD_TYPE=$CONFIGURATION -DCMAKE_INSTALL_PREFIX=./bin -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || exit 1
+cmake -DBUILD_SHARED_LIBS=$SHARED_LIB -DMOON_BUILD_TESTS=$TESTS -DMOON_COVERAGE=$COV -DMOON_BUILD_DOC=$DOC ../.. -G"$BUILD_SYSTEM" -DCMAKE_BUILD_TYPE=$CONFIGURATION -DCMAKE_INSTALL_PREFIX=./bin -DCMAKE_EXPORT_COMPILE_COMMANDS=ON || exit 1
 
 if [ $CHECK_ONLY = 1 ]; then
   exit 0
