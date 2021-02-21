@@ -45,14 +45,18 @@ cd build/Debug/test || exit 1
 if [ $COVERAGE = 1 ]; then
   ./moon_tst -o "$OUT"/test_results.xml -r junit
 
-  gcovr --html -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage.html || echo "Could not generate html coverage report"
+  mkdir moon_coverage_html
+
+  gcovr --html --html-details -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage_html/index.html || echo "Could not generate html coverage report"
   gcovr --xml -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage.xml || echo "Could not generate xml coverage report"
 
-  rm -rf "$OUT"/moon_coverage.html
+  rm -rf "$OUT"/moon_coverage_html
   rm -rf "$OUT"/moon_coverage.xml
 
-  mv moon_coverage.html "$OUT"
+  mv moon_coverage_html "$OUT"
   mv moon_coverage.xml "$OUT"
+
+  echo "Open $OUT/moon_coverage_html/index.html in a browser"
 fi
 
 ./moon_tst || exit 1
