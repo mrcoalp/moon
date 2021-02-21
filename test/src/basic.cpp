@@ -15,7 +15,6 @@ TEST_CASE("initialize and close state", "[basic]") {
 
 TEST_CASE("index operations", "[basic]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
 
     SECTION("pop stack protection", "[basic]") {
         BEGIN_STACK_GUARD
@@ -52,6 +51,8 @@ TEST_CASE("index operations", "[basic]") {
 
 TEST_CASE("print stack elements", "[basic]") {
     Moon::Init();
+    std::string log;
+    Moon::SetLogger([&log](const auto& msg) { log = msg; });
 
     SECTION("print a boolean") {
         Moon::Push(true);
@@ -78,15 +79,40 @@ TEST_CASE("print stack elements", "[basic]") {
         Moon::Pop();
     }
 
+    SECTION("print a map") {
+        REQUIRE(Moon::RunCode("return {x = 1, y = 2}"));
+        REQUIRE_FALSE(Moon::StackElementToStringDump(-1).empty());
+        Moon::Pop();
+    }
+
+    SECTION("print other values") {
+        REQUIRE(Moon::RunCode("return function() assert(true) end"));
+        REQUIRE_FALSE(Moon::StackElementToStringDump(-1).empty());
+        Moon::Pop();
+    }
+
+    SECTION("handling invalid indexes") { REQUIRE(Moon::StackElementToStringDump(-1).empty()); }
+
+    SECTION("printing whole stack") {
+        Moon::PushValues(1, 2, 3, true, "string");
+        Moon::LogStackDump();
+        REQUIRE(log.size() > std::string("***** LUA STACK *****").size());
+        Moon::Pop(5);
+    }
+
     Moon::CloseState();
 }
 
 TEST_CASE("run code with and without errors", "[basic]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
     REQUIRE(Moon::RunCode("assert(true)"));
+    REQUIRE_FALSE(Moon::HasError());
     REQUIRE_FALSE(Moon::RunCode("assert(false)"));
+    REQUIRE(Moon::HasError());
+    Moon::ClearError();
     REQUIRE_FALSE(Moon::RunCode("&"));
+    REQUIRE(Moon::HasError());
+    Moon::ClearError();
     Moon::CloseState();
 }
 
@@ -111,10 +137,12 @@ TEST_CASE("check lua types", "[basic]") {
     BEGIN_STACK_GUARD
     Moon::PushValues(2, true, "passed", std::vector<int>{1, 2, 3});
     Moon::PushNull();
-    REQUIRE(Moon::GetType(-2) == moon::LuaType::Table);
+    Moon::PushTable();
+    REQUIRE(Moon::GetType(-3) == moon::LuaType::Table);
     REQUIRE(Moon::GetType(2) == moon::LuaType::Boolean);
-    REQUIRE(Moon::GetType(-1) == moon::LuaType::Null);
-    Moon::Pop(5);
+    REQUIRE(Moon::GetType(-2) == moon::LuaType::Null);
+    REQUIRE(Moon::GetType(-1) == moon::LuaType::Table);
+    Moon::Pop(6);
     END_STACK_GUARD
     Moon::CloseState();
 }

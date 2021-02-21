@@ -1,12 +1,10 @@
 #include <catch2/catch.hpp>
-#include <utility>
 
 #include "moon/moon.h"
 #include "stackguard.h"
 
 TEST_CASE("call functions", "[functions]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
 
     SECTION("no arguments, no return") {
         Moon::RunCode("function Test() end");
@@ -75,7 +73,6 @@ struct Test {
 
 TEST_CASE("register C++ functions, lambdas", "[functions][basic]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
 
     SECTION("register static functions") {
         BEGIN_STACK_GUARD

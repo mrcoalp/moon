@@ -76,7 +76,6 @@ TEST_CASE("push user type", "[basic][scripting]") {
 
 TEST_CASE("use user type in functions", "[scripting][functions]") {
     Moon::Init();
-    Moon::SetLogger([](const auto& error) { printf("%s\n", error.c_str()); });
     Moon::RegisterClass<UserDefinedType>();
 
     SECTION("push user type to Lua function") {
