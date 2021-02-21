@@ -78,13 +78,13 @@ public:
 
     Reference(const Reference&) noexcept = delete;
 
-    Reference(Reference&& reference) noexcept : m_key(reference.m_key) { reference.m_key = LUA_NOREF; }
+    Reference(Reference&& other) noexcept : m_key(other.m_key) { other.m_key = LUA_NOREF; }
 
     Reference& operator=(const Reference&) noexcept = delete;
 
-    Reference& operator=(Reference&& reference) noexcept {
-        m_key = reference.m_key;
-        reference.m_key = LUA_NOREF;
+    Reference& operator=(Reference&& other) noexcept {
+        m_key = other.m_key;
+        other.m_key = LUA_NOREF;
         return *this;
     }
 
@@ -150,7 +150,6 @@ public:
 protected:
     explicit Reference(int key) : m_key(key) {}
 
-private:
     /**
      * @brief Key to later retrieve lua function.
      */
@@ -713,9 +712,9 @@ public:
 
     Object(lua_State* L, int index) : m_state(L), Reference(L, index) {}
 
-    Object(const Object& reference) : m_state(reference.m_state), Reference(reference.copy()) {}
+    Object(const Object& other) : m_state(other.m_state), Reference(other.copy()) {}
 
-    Object(Object&& reference) noexcept : m_state(reference.m_state), Reference(std::move(reference)) { reference.m_state = nullptr; }
+    Object(Object&& other) noexcept : m_state(other.m_state), Reference(std::move(other)) { other.m_state = nullptr; }
 
     ~Object() {
         if (m_state == nullptr) {
@@ -723,6 +722,27 @@ public:
         }
         Unload();
     }
+
+    Object& operator=(const Object& other) noexcept {
+        if (&other == this) {
+            return *this;
+        }
+        m_key = other.copy();
+        m_state = other.m_state;
+        return *this;
+    }
+
+    Object& operator=(Object&& other) noexcept {
+        m_key = other.m_key;
+        m_state = other.m_state;
+        other.m_key = LUA_NOREF;
+        other.m_state = nullptr;
+        return *this;
+    }
+
+    inline bool operator==(const Object& other) const { return m_key == other.m_key && m_state == other.m_state; }
+
+    inline bool operator!=(const Object& other) const { return !(*this == other); }
 
     static inline void SetErrorReporter(const std::function<void(const std::string&)>& reporter) { s_reportError = reporter; }
 
@@ -752,58 +772,80 @@ public:
 
     template <typename Ret>
     Ret As() {
-        if (IsLoaded()) {
-            Push();
-            auto ret = Marshalling::GetValue<Ret>(m_state, -1);
-            lua_pop(m_state, 1);
-            return ret;
+        if (!IsLoaded()) {
+            validate("Tried to get value from an Object not loaded");
+            return {};
         }
-        return {};
+        Push();
+        Ret ret{};
+        try {
+            ret = std::move(Marshalling::GetValue<Ret>(m_state, -1));
+        } catch (const std::exception& e) {
+            validate(e.what());
+        }
+        lua_pop(m_state, 1);
+        return ret;
     }
 
     void Call() const {
-        if (IsLoaded()) {
-            Push();
-            validate(Marshalling::GetError(m_state, lua_pcall(m_state, 0, 0, 0)));
+        if (!IsLoaded()) {
+            validate("Tried to call an Object not loaded");
+            return;
         }
+        Push();
+        validate(Marshalling::GetError(m_state, lua_pcall(m_state, 0, 0, 0)));
     }
 
     template <typename Ret>
     Ret Call() const {
-        if (IsLoaded()) {
-            Push();
-            if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, 0, 1, 0)))) {
-                return {};
-            }
-            auto ret = Marshalling::GetValue<Ret>(m_state, -1);
-            lua_pop(m_state, 1);
-            return ret;
+        if (!IsLoaded()) {
+            validate("Tried to call an Object not loaded");
+            return {};
         }
-        return {};
+        Push();
+        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, 0, 1, 0)))) {
+            return {};
+        }
+        Ret ret{};
+        try {
+            ret = std::move(Marshalling::GetValue<Ret>(m_state, -1));
+        } catch (const std::exception& e) {
+            validate(e.what());
+        }
+        lua_pop(m_state, 1);
+        return ret;
     }
 
     template <typename... Args>
     void Call(Args... args) const {
-        if (IsLoaded()) {
-            Push();
-            Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-            validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 0, 0)));
+        if (!IsLoaded()) {
+            validate("Tried to call an Object not loaded");
+            return;
         }
+        Push();
+        Marshalling::PushValues(m_state, std::forward<Args>(args)...);
+        validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 0, 0)));
     }
 
     template <typename Ret, typename... Args>
     Ret Call(Args... args) const {
-        if (IsLoaded()) {
-            Push();
-            Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-            if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 1, 0)))) {
-                return {};
-            }
-            auto ret = Marshalling::GetValue<Ret>(m_state, -1);
-            lua_pop(m_state, 1);
-            return ret;
+        if (!IsLoaded()) {
+            validate("Tried to call an Object not loaded");
+            return {};
         }
-        return {};
+        Push();
+        Marshalling::PushValues(m_state, std::forward<Args>(args)...);
+        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 1, 0)))) {
+            return {};
+        }
+        Ret ret{};
+        try {
+            ret = std::move(Marshalling::GetValue<Ret>(m_state, -1));
+        } catch (const std::exception& e) {
+            validate(e.what());
+        }
+        lua_pop(m_state, 1);
+        return ret;
     }
 
     void operator()() const { Call(); }
