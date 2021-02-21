@@ -53,10 +53,8 @@ if [ $COVERAGE = 1 ]; then
   rm -rf "$OUT"/moon_coverage_html
   rm -rf "$OUT"/moon_coverage.xml
 
-  mv moon_coverage_html "$OUT"
+  mv moon_coverage_html "$OUT" && echo "Open $OUT/moon_coverage_html/index.html in a browser"
   mv moon_coverage.xml "$OUT"
-
-  echo "Open $OUT/moon_coverage_html/index.html in a browser"
 fi
 
 ./moon_tst || exit 1
