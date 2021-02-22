@@ -728,7 +728,7 @@ public:
                 lua_pop(L, 1);
                 break;
             }
-            vec.emplace_back(GetValue<typename R::value_type>(L, lua_gettop(L)));
+            vec.emplace_back(std::move(GetValue<typename R::value_type>(L, lua_gettop(L))));
             lua_pop(L, 1);
         }
         return vec;
@@ -741,7 +741,7 @@ public:
         lua_pushnil(L);
         R map;
         while (lua_next(L, index) != 0) {
-            map.emplace(GetValue<std::string>(L, -2), GetValue<typename R::mapped_type>(L, lua_gettop(L)));
+            map.emplace(std::move(GetValue<std::string>(L, -2)), std::move(GetValue<typename R::mapped_type>(L, lua_gettop(L))));
             lua_pop(L, 1);
         }
         return map;
@@ -804,7 +804,7 @@ public:
     }
 
     template <typename Class>
-    static void PushValue(lua_State* L, Class* value) {
+    static std::enable_if_t<std::is_same_v<decltype(Class::Binding), Binding<Class>>, void> PushValue(lua_State* L, Class* value) {
         auto** a = static_cast<Class**>(lua_newuserdata(L, sizeof(Class*)));  // Create userdata
         *a = value;
         luaL_getmetatable(L, Class::Binding.GetName());
@@ -915,7 +915,7 @@ private:
     template <int... indices, typename RetHelper>
     static int callHelper(Indices<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
         try {
-            auto output = func(Marshalling::GetValue<Args>(L, indices + 1)...);
+            auto output = func(std::move(Marshalling::GetValue<Args>(L, indices + 1))...);
             Marshalling::PushValue(L, output);
         } catch (const std::exception& e) {
             std::stringstream error;
@@ -929,7 +929,7 @@ private:
     template <int... indices>
     static int callHelper(Indices<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
         try {
-            func(Marshalling::GetValue<Args>(L, indices + 1)...);
+            func(std::move(Marshalling::GetValue<Args>(L, indices + 1))...);
         } catch (const std::exception& e) {
             std::stringstream error;
             error << "Moon error: " << e.what();
@@ -1165,7 +1165,7 @@ public:
     template <typename R>
     static inline R Get(const int index = 1) {
         try {
-            return moon::Marshalling::GetValue<R>(s_state, index);
+            return std::move(moon::Marshalling::GetValue<R>(s_state, index));
         } catch (const std::exception& e) {
             error(e.what());
         }

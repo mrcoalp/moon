@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef STACK_GUARD_H
+#define STACK_GUARD_H
+
 #include "moon/moon.h"
 
 #define BEGIN_STACK_GUARD \
@@ -24,3 +27,5 @@ private:
     int& m_begin;
     int& m_end;
 };
+
+#endif

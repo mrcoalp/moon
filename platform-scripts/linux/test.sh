@@ -57,6 +57,6 @@ if [ $COVERAGE = 1 ]; then
   mv moon_coverage.xml "$OUT"
 fi
 
-./moon_tst || exit 1
+./moon_tst --benchmark-no-analysis --benchmark-samples 1000 || exit 1
 
 exit 0
