@@ -3,6 +3,19 @@
 #include "moon/moon.h"
 #include "stackguard.h"
 
+TEST_CASE("reference type", "[basic]") {
+    Moon::Init();
+
+    moon::Reference ref;
+    Moon::Push(20);
+    moon::Reference ref2(Moon::GetState());
+    ref = std::move(ref2);
+    REQUIRE(ref.IsLoaded());
+    REQUIRE(ref.GetKey() == 1);
+
+    Moon::CloseState();
+}
+
 TEST_CASE("dynamic object type", "[object][basic]") {
     Moon::Init();
 
@@ -37,6 +50,9 @@ TEST_CASE("dynamic object type", "[object][basic]") {
     SECTION("get and push from/to Lua stack") {
         BEGIN_STACK_GUARD
 
+        moon::Object o(Moon::GetState());
+        o.Push();
+        REQUIRE(Moon::GetType(-1) == moon::LuaType::Null);
         REQUIRE(Moon::RunCode("return function() print('passed') end"));
         auto f = Moon::MakeObject();
         REQUIRE(f.IsLoaded());
@@ -46,7 +62,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
         f.Unload();
         REQUIRE_FALSE(f.IsLoaded());
 
-        Moon::Pop(2);
+        Moon::Pop(3);
         END_STACK_GUARD
     }
 
@@ -108,13 +124,18 @@ TEST_CASE("dynamic object type", "[object][basic]") {
             auto o = Moon::MakeObject();
             Moon::Pop();
             auto o2 = o;
-            count = o2.GetKey();
+            moon::Object o3;
+            o3 = o2;
+            o3 = o3;
+            count = o3.GetKey();
             REQUIRE(o.IsLoaded());
             REQUIRE(o2.IsLoaded());
+            REQUIRE(o3.IsLoaded());
             REQUIRE(o != o2);
+            REQUIRE(o2 != o3);
         }
 
-        REQUIRE((count > LUA_NOREF && count <= 2));
+        REQUIRE((count > LUA_NOREF && count <= 3));
 
         {  // move
             Moon::Push(20);
@@ -131,7 +152,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 
         END_STACK_GUARD
 
-        REQUIRE((count > LUA_NOREF && count <= 2));  // If indices are not unref this will fail, cause the reference count keeps incrementing
+        REQUIRE((count > LUA_NOREF && count <= 3));  // If indices are not unref this will fail, cause the reference count keeps incrementing
     }
 
     SECTION("error handling") {

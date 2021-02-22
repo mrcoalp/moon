@@ -118,18 +118,16 @@ public:
     /**
      * @brief Push value to stack.
      */
-    int Push(lua_State* L) const {
+    void Push(lua_State* L) const {
         if (!IsLoaded()) {
             if (L != nullptr) {
                 lua_pushnil(L);
-                return 1;
             }
-            return 0;
+            return;
         }
         luaL_getmetatable(L, LUA_REF_HOLDER_META_NAME);
         lua_rawgeti(L, -1, m_key);
         lua_remove(L, -2);
-        return 1;
     }
 
     /**
