@@ -42,7 +42,6 @@
 #define MOON_ADD_PROPERTY_CUSTOM(_prop, _getter, _setter) .AddProperty({#_prop, &BindingType::_getter, &BindingType::_setter})
 
 namespace moon {
-constexpr const char* LUA_REF_HOLDER_META_NAME{"LuaRefHolder"};
 constexpr const char* LUA_INVOKABLE_HOLDER_META_NAME{"LuaInvokableHolder"};
 
 using LuaCFunction = int (*)(lua_State*);
@@ -68,10 +67,7 @@ public:
 
     Reference(lua_State* L, int index) {
         lua_pushvalue(L, index);
-        luaL_getmetatable(L, LUA_REF_HOLDER_META_NAME);
-        lua_pushvalue(L, -2);
-        m_key = luaL_ref(L, -2);
-        lua_pop(L, 2);
+        m_key = luaL_ref(L, LUA_REGISTRYINDEX);
     }
 
     explicit Reference(lua_State* L) : Reference(L, -1) {}
@@ -86,11 +82,6 @@ public:
         m_key = other.m_key;
         other.m_key = LUA_NOREF;
         return *this;
-    }
-
-    static void Register(lua_State* L) {
-        luaL_newmetatable(L, LUA_REF_HOLDER_META_NAME);
-        lua_pop(L, 1);
     }
 
     [[nodiscard]] inline int GetKey() const { return m_key; }
@@ -108,9 +99,7 @@ public:
      */
     void Unload(lua_State* L) {
         if (IsLoaded()) {
-            luaL_getmetatable(L, LUA_REF_HOLDER_META_NAME);
-            luaL_unref(L, -1, m_key);
-            lua_pop(L, 1);
+            luaL_unref(L, LUA_REGISTRYINDEX, m_key);
             m_key = LUA_NOREF;
         }
     }
@@ -125,9 +114,7 @@ public:
             }
             return;
         }
-        luaL_getmetatable(L, LUA_REF_HOLDER_META_NAME);
-        lua_rawgeti(L, -1, m_key);
-        lua_remove(L, -2);
+        lua_rawgeti(L, LUA_REGISTRYINDEX, m_key);
     }
 
     /**
@@ -513,6 +500,14 @@ template <typename T>
 using IsMap = std::enable_if_t<Map<T>::value, T>;
 template <typename T>
 using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, T>;
+template <typename T>
+struct Function : std::false_type {};
+template <typename T>
+struct Function<std::function<T>> : std::true_type {};
+template <typename T>
+using IsFunction = std::enable_if_t<Function<T>::value, T>;
+template <typename T>
+struct STLFunctionSpread;
 
 class Marshalling {
 public:
@@ -590,6 +585,13 @@ public:
             lua_pop(L, 1);
         }
         return map;
+    }
+
+    template <typename R>
+    static IsFunction<R> GetValue(lua_State* L, int index) {
+        assertType(lua_isfunction(L, index));
+        ensureValidIndexInRecursion(index, L);
+        return STLFunctionSpread<R>(L, index).func;
     }
 
     static void PushValue(lua_State* L, bool value) { lua_pushboolean(L, (int)value); }
@@ -856,15 +858,12 @@ public:
 private:
     /// Copies reference in lua ref holder table.
     /// \return Key id of newly created copy.
-    int copy() const {
+    [[nodiscard]] int copy() const {
         if (!IsLoaded()) {
             return LUA_NOREF;
         }
-        luaL_getmetatable(m_state, LUA_REF_HOLDER_META_NAME);
         Push();
-        int key = luaL_ref(m_state, -2);
-        lua_pop(m_state, 1);
-        return key;
+        return luaL_ref(m_state, LUA_REGISTRYINDEX);
     }
 
     static bool validate(const std::optional<std::string>& message) {
@@ -883,6 +882,21 @@ private:
      * @brief Lua state.
      */
     lua_State* m_state{nullptr};
+};
+
+template <typename Ret, typename... Args>
+struct STLFunctionSpread<std::function<Ret(Args...)>> {
+    std::function<Ret(Args...)> func;
+
+    STLFunctionSpread(lua_State* L, int index) {
+        moon::Object o(L, index);
+        constexpr bool isVoid = std::is_same_v<Ret, void>;
+        if constexpr (isVoid) {
+            func = [o](Args... args) { o.Call(std::forward<Args>(args)...); };
+        } else {
+            func = [o](Args... args) { return o.Call<Ret>(std::forward<Args>(args)...); };
+        }
+    }
 };
 
 template <int... is>
@@ -994,7 +1008,6 @@ public:
         luaL_openlibs(s_state);
         s_logger = [](const auto&) {};
         s_error.clear();
-        moon::Reference::Register(s_state);
         moon::Object::SetErrorReporter(error);
         moon::Invokable::Register(s_state);
         moon::Invokable::SetErrorReporter(error);

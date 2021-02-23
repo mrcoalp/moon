@@ -16,6 +16,8 @@ TEST_CASE("get values from stack benchmark", "[basic][benchmark]") {
     BENCHMARK("get string") { return Moon::Get<std::string>(3); };
     BENCHMARK("get const char") { return Moon::Get<const char*>(3); };
     BENCHMARK("get pointer") { return Moon::Get<void*>(4); };
+    BENCHMARK("get reference") { return Moon::Get<moon::Reference>(1); };
+    BENCHMARK("get object") { return Moon::Get<moon::Object>(1); };
 
     Moon::CloseState();
 }

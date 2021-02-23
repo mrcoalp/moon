@@ -5,13 +5,14 @@
 
 TEST_CASE("reference type", "[basic]") {
     Moon::Init();
+    int topRefIndex = (int)lua_rawlen(Moon::GetState(), LUA_REGISTRYINDEX);
 
     moon::Reference ref;
     Moon::Push(20);
     moon::Reference ref2(Moon::GetState());
     ref = std::move(ref2);
     REQUIRE(ref.IsLoaded());
-    REQUIRE(ref.GetKey() == 1);
+    REQUIRE(ref.GetKey() == topRefIndex + 1);
 
     Moon::CloseState();
 }
@@ -109,7 +110,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
     }
 
     SECTION("object lifetime") {
-        int count = LUA_NOREF;
+        int topRefIndex = (int)lua_rawlen(Moon::GetState(), LUA_REGISTRYINDEX);
         BEGIN_STACK_GUARD
 
         {
@@ -117,6 +118,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
             auto o = Moon::MakeObject();
             Moon::Pop();
             REQUIRE(o.IsLoaded());
+            REQUIRE(o.GetKey() == topRefIndex + 1);
         }
 
         {  // copy
@@ -127,15 +129,13 @@ TEST_CASE("dynamic object type", "[object][basic]") {
             moon::Object o3;
             o3 = o2;
             o3 = o3;
-            count = o3.GetKey();
             REQUIRE(o.IsLoaded());
             REQUIRE(o2.IsLoaded());
             REQUIRE(o3.IsLoaded());
             REQUIRE(o != o2);
             REQUIRE(o2 != o3);
+            REQUIRE(o3.GetKey() == topRefIndex + 3);
         }
-
-        REQUIRE((count > LUA_NOREF && count <= 3));
 
         {  // move
             Moon::Push(20);
@@ -145,14 +145,12 @@ TEST_CASE("dynamic object type", "[object][basic]") {
             int key = o.GetKey();
             auto o2 = std::move(o);
             REQUIRE(o.GetKey() == LUA_NOREF);
-            count = o2.GetKey();
             REQUIRE(o2.IsLoaded());
             REQUIRE(key == o2.GetKey());
+            REQUIRE(o2.GetKey() == topRefIndex + 1);
         }
 
         END_STACK_GUARD
-
-        REQUIRE((count > LUA_NOREF && count <= 3));  // If indices are not unref this will fail, cause the reference count keeps incrementing
     }
 
     SECTION("error handling") {
