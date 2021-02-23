@@ -472,40 +472,42 @@ private:
     bool m_gc{true};
 };
 
-template <typename T>
-using IsBool = std::enable_if_t<std::is_same_v<T, bool>, T>;
-template <typename T>
-using IsNumber = std::enable_if_t<std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, T>;
-template <typename T>
-using IsString = std::enable_if_t<std::is_same_v<T, std::string>, T>;
-template <typename T>
-using IsCString = std::enable_if_t<std::is_same_v<T, const char*>, T>;
-template <typename T>
-using IsLuaRef = std::enable_if_t<std::is_base_of_v<Reference, T>, T>;
-template <typename T>
-using IsPointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, T>;
+template <typename T, typename Ret = T>
+using IsBool = std::enable_if_t<std::is_same_v<T, bool>, Ret>;
+template <typename T, typename Ret = T>
+using IsIntegral = std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, Ret>;
+template <typename T, typename Ret = T>
+using IsFloatingPoint = std::enable_if_t<std::is_floating_point_v<T>, Ret>;
+template <typename T, typename Ret = T>
+using IsString = std::enable_if_t<std::is_same_v<T, std::string>, Ret>;
+template <typename T, typename Ret = T>
+using IsCString = std::enable_if_t<std::is_same_v<T, const char*>, Ret>;
+template <typename T, typename Ret = T>
+using IsLuaRef = std::enable_if_t<std::is_base_of_v<Reference, T>, Ret>;
+template <typename T, typename Ret = T>
+using IsPointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
 template <typename T>
 struct Vector : std::false_type {};
 template <typename T>
 struct Vector<std::vector<T>> : std::true_type {};
-template <typename T>
-using IsVector = std::enable_if_t<Vector<T>::value, T>;
+template <typename T, typename Ret = T>
+using IsVector = std::enable_if_t<Vector<T>::value, Ret>;
 template <typename T>
 struct Map : std::false_type {};
 template <typename T>
 struct Map<LuaMap<T>> : std::true_type {};
 template <typename T>
 struct Map<std::map<std::string, T>> : std::true_type {};
-template <typename T>
-using IsMap = std::enable_if_t<Map<T>::value, T>;
-template <typename T>
-using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, T>;
+template <typename T, typename Ret = T>
+using IsMap = std::enable_if_t<Map<T>::value, Ret>;
+template <typename T, typename Ret = T>
+using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, Ret>;
 template <typename T>
 struct Function : std::false_type {};
 template <typename T>
 struct Function<std::function<T>> : std::true_type {};
-template <typename T>
-using IsFunction = std::enable_if_t<Function<T>::value, T>;
+template <typename T, typename Ret = T>
+using IsFunction = std::enable_if_t<Function<T>::value, Ret>;
 template <typename T>
 struct STLFunctionSpread;
 
@@ -518,8 +520,14 @@ public:
     }
 
     template <typename R>
-    static IsNumber<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isnumber(L, index));
+    static IsIntegral<R> GetValue(lua_State* L, int index) {
+        assertType(lua_isinteger(L, index));
+        return lua_tointeger(L, index);
+    }
+
+    template <typename R>
+    static IsFloatingPoint<R> GetValue(lua_State* L, int index) {
+        assertType(lua_isnumber(L, index) && !lua_isinteger(L, index));
         return static_cast<R>(lua_tonumber(L, index));
     }
 
@@ -594,15 +602,20 @@ public:
         return STLFunctionSpread<R>(L, index).func;
     }
 
-    static void PushValue(lua_State* L, bool value) { lua_pushboolean(L, (int)value); }
+    template <typename T>
+    static IsBool<T, void> PushValue(lua_State* L, T value) {
+        lua_pushboolean(L, value);
+    }
 
-    static void PushValue(lua_State* L, int value) { lua_pushinteger(L, value); }
+    template <typename T>
+    static IsIntegral<T, void> PushValue(lua_State* L, T value) {
+        lua_pushinteger(L, value);
+    }
 
-    static void PushValue(lua_State* L, unsigned value) { lua_pushinteger(L, value); }
-
-    static void PushValue(lua_State* L, float value) { lua_pushnumber(L, value); }
-
-    static void PushValue(lua_State* L, double value) { lua_pushnumber(L, value); }
+    template <typename T>
+    static IsFloatingPoint<T, void> PushValue(lua_State* L, T value) {
+        lua_pushnumber(L, value);
+    }
 
     static void PushValue(lua_State* L, const std::string& value) { lua_pushstring(L, value.c_str()); }
 
@@ -610,9 +623,9 @@ public:
 
     static void PushValue(lua_State* L, void* value) { lua_pushlightuserdata(L, value); }
 
-    static void PushValue(lua_State* L, moon::LuaCFunction value) { lua_pushcfunction(L, value); }
+    static void PushValue(lua_State* L, LuaCFunction value) { lua_pushcfunction(L, value); }
 
-    static void PushValue(lua_State* L, const moon::Reference& value) { value.Push(L); }
+    static void PushValue(lua_State* L, const Reference& value) { value.Push(L); }
 
     template <typename T>
     static void PushValue(lua_State* L, const std::vector<T>& value) {
@@ -627,7 +640,7 @@ public:
     }
 
     template <typename T>
-    static void PushValue(lua_State* L, const moon::LuaMap<T>& value) {
+    static void PushValue(lua_State* L, const LuaMap<T>& value) {
         lua_newtable(L);
         for (const auto& element : value) {
             PushValue(L, element.first);
@@ -646,17 +659,17 @@ public:
         }
     }
 
-    template <typename Class>
-    static std::enable_if_t<std::is_same_v<decltype(Class::Binding), Binding<Class>>, void> PushValue(lua_State* L, Class* value) {
-        auto** a = static_cast<Class**>(lua_newuserdata(L, sizeof(Class*)));  // Create userdata
+    template <typename T>
+    static IsBinding<T, void> PushValue(lua_State* L, T* value) {
+        auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
         *a = value;
-        luaL_getmetatable(L, Class::Binding.GetName());
+        luaL_getmetatable(L, T::Binding.GetName());
         lua_setmetatable(L, -2);
     }
 
-    template <typename Class>
-    static void PushValue(lua_State* L, Class* value, const char* name) {
-        auto** a = static_cast<Class**>(lua_newuserdata(L, sizeof(Class*)));  // Create userdata
+    template <typename T>
+    static void PushValue(lua_State* L, T* value, const char* name) {
+        auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
         *a = value;
         luaL_getmetatable(L, name);
         lua_setmetatable(L, -2);
@@ -770,6 +783,22 @@ public:
      */
     void Push() const { Reference::Push(m_state); }
 
+    template <typename T>
+    bool Is() {
+        if (!IsLoaded()) {
+            return false;
+        }
+        Push();
+        bool result = true;
+        try {
+            Marshalling::GetValue<T>(m_state, -1);
+        } catch (const std::exception& e) {
+            result = false;
+        }
+        lua_pop(m_state, 1);
+        return result;
+    }
+
     template <typename Ret>
     Ret As() {
         if (!IsLoaded()) {
@@ -787,37 +816,8 @@ public:
         return ret;
     }
 
-    void Call() const {
-        if (!IsLoaded()) {
-            validate("Tried to call an Object not loaded");
-            return;
-        }
-        Push();
-        validate(Marshalling::GetError(m_state, lua_pcall(m_state, 0, 0, 0)));
-    }
-
-    template <typename Ret>
-    Ret Call() const {
-        if (!IsLoaded()) {
-            validate("Tried to call an Object not loaded");
-            return {};
-        }
-        Push();
-        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, 0, 1, 0)))) {
-            return {};
-        }
-        Ret ret{};
-        try {
-            ret = std::move(Marshalling::GetValue<Ret>(m_state, -1));
-        } catch (const std::exception& e) {
-            validate(e.what());
-        }
-        lua_pop(m_state, 1);
-        return ret;
-    }
-
-    template <typename... Args>
-    void Call(Args... args) const {
+    template <typename Ret, typename... Args>
+    std::enable_if_t<std::is_void_v<Ret>, void> Call(Args&&... args) const {
         if (!IsLoaded()) {
             validate("Tried to call an Object not loaded");
             return;
@@ -828,7 +828,7 @@ public:
     }
 
     template <typename Ret, typename... Args>
-    Ret Call(Args... args) const {
+    std::enable_if_t<!std::is_void_v<Ret>, Ret> Call(Args&&... args) const {
         if (!IsLoaded()) {
             validate("Tried to call an Object not loaded");
             return {};
@@ -848,14 +848,21 @@ public:
         return ret;
     }
 
-    void operator()() const { Call(); }
-
     template <typename... Args>
     void operator()(Args&&... args) const {
-        Call(std::forward<Args>(args)...);
+        Call<void>(std::forward<Args>(args)...);
     }
 
+    explicit operator bool() { return IsLoaded(); }
+
+    explicit operator bool() const { return IsLoaded(); }
+
+    static Object CreateAndPop(lua_State* L) { return std::move(Object(L, std::true_type{})); }
+
 private:
+    /// Will save top stack element as ref and pop it, messing with stack. To still leave a copy in stack, explicit specify element index.
+    Object(lua_State* L, std::true_type) : m_state(L), Reference(luaL_ref(L, LUA_REGISTRYINDEX)) {}
+
     /// Copies reference in lua ref holder table.
     /// \return Key id of newly created copy.
     [[nodiscard]] int copy() const {
@@ -890,12 +897,7 @@ struct STLFunctionSpread<std::function<Ret(Args...)>> {
 
     STLFunctionSpread(lua_State* L, int index) {
         moon::Object o(L, index);
-        constexpr bool isVoid = std::is_same_v<Ret, void>;
-        if constexpr (isVoid) {
-            func = [o](Args... args) { o.Call(std::forward<Args>(args)...); };
-        } else {
-            func = [o](Args... args) { return o.Call<Ret>(std::forward<Args>(args)...); };
-        }
+        func = [o](Args... args) { return o.Call<Ret>(std::forward<Args>(args)...); };
     }
 };
 
@@ -1526,13 +1528,19 @@ public:
         SetGlobalVariable(name);
     }
 
+    template <typename T>
+    static moon::Object MakeObject(T&& value) {
+        Push(value);
+        return std::move(moon::Object::CreateAndPop(s_state));  // Maybe a superfluous move... Can't be bothered.
+    }
+
     /**
      * @brief Creates and stores a new ref of element at provided index.
      *
      * @param index Index of element to create ref. Defaults to top of stack.
      * @return A new LuaRef.
      */
-    static moon::Object MakeObject(int index = -1) { return {s_state, index}; }
+    static moon::Object MakeObjectFromIndex(int index = -1) { return {s_state, index}; }
 
 private:
     /**

@@ -24,21 +24,21 @@ TEST_CASE("dynamic object type", "[object][basic]") {
         BEGIN_STACK_GUARD
 
         REQUIRE(Moon::RunCode("return {x = 2, y = 'passed', z = {g = true, w = {1, 2, 3}, r = 3.14}}"));
-        auto m = Moon::MakeObject();
+        auto m = Moon::MakeObjectFromIndex();
         REQUIRE(m.IsLoaded());
         REQUIRE(m.GetType() == moon::LuaType::Table);
         m.Unload();
         REQUIRE_FALSE(m.IsLoaded());
 
         REQUIRE(Moon::RunCode("return function() print('passed') end"));
-        auto f = Moon::MakeObject();
+        auto f = Moon::MakeObjectFromIndex();
         REQUIRE(f.IsLoaded());
         REQUIRE(f.GetType() == moon::LuaType::Function);
         f.Unload();
         REQUIRE_FALSE(f.IsLoaded());
 
         Moon::Push(32);
-        auto n = Moon::MakeObject();
+        auto n = Moon::MakeObjectFromIndex();
         REQUIRE(n.IsLoaded());
         REQUIRE(n.GetType() == moon::LuaType::Number);
         n.Unload();
@@ -55,13 +55,18 @@ TEST_CASE("dynamic object type", "[object][basic]") {
         o.Push();
         REQUIRE(Moon::GetType(-1) == moon::LuaType::Null);
         REQUIRE(Moon::RunCode("return function() print('passed') end"));
-        auto f = Moon::MakeObject();
+        auto f = Moon::MakeObjectFromIndex();
         REQUIRE(f.IsLoaded());
         REQUIRE(f.GetType() == moon::LuaType::Function);
         Moon::Push(f);
         REQUIRE(Moon::GetType(-1) == moon::LuaType::Function);
         f.Unload();
         REQUIRE_FALSE(f.IsLoaded());
+
+        auto o2 = Moon::MakeObject("passed");
+        REQUIRE(o2.IsLoaded());
+        REQUIRE(o2.Is<std::string>());
+        REQUIRE(o2.As<std::string>() == "passed");
 
         Moon::Pop(3);
         END_STACK_GUARD
@@ -76,31 +81,31 @@ TEST_CASE("dynamic object type", "[object][basic]") {
         REQUIRE(Moon::RunCode("return {x = 1, y = 2, z = 3}"));
         REQUIRE(Moon::RunCode("return {1, 2, 3}"));
 
-        auto i = Moon::MakeObject(1);
+        auto i = Moon::MakeObjectFromIndex(1);
         REQUIRE(i.IsLoaded());
         REQUIRE(i.GetType() == moon::LuaType::Number);
         REQUIRE(i.As<int>() == 20);
 
-        auto b = Moon::MakeObject(2);
+        auto b = Moon::MakeObjectFromIndex(2);
         REQUIRE(b.IsLoaded());
         REQUIRE(b.GetType() == moon::LuaType::Boolean);
         REQUIRE(b.As<bool>());
 
-        auto s = Moon::MakeObject(3);
+        auto s = Moon::MakeObjectFromIndex(3);
         REQUIRE(s.IsLoaded());
         REQUIRE(s.GetType() == moon::LuaType::String);
         REQUIRE(s.As<std::string>() == "passed");
         // Chain with Object
         REQUIRE(s.As<moon::Object>().As<std::string>() == "passed");
 
-        auto m = Moon::MakeObject(4);
+        auto m = Moon::MakeObjectFromIndex(4);
         REQUIRE(m.IsLoaded());
         REQUIRE(m.GetType() == moon::LuaType::Table);
         auto map = m.As<std::unordered_map<std::string, int>>();
         REQUIRE(Moon::EnsureMapKeys({"x", "y", "z"}, map));
         REQUIRE(map.at("x") == 1);
 
-        auto v = Moon::MakeObject(5);
+        auto v = Moon::MakeObjectFromIndex(5);
         REQUIRE(v.IsLoaded());
         REQUIRE(v.GetType() == moon::LuaType::Table);
         REQUIRE(v.As<std::vector<int>>()[0] == 1);
@@ -109,13 +114,30 @@ TEST_CASE("dynamic object type", "[object][basic]") {
         END_STACK_GUARD
     }
 
+    SECTION("test c++ objects from moon objects") {
+        {
+            Moon::Push(20);
+            auto o = Moon::MakeObjectFromIndex();
+            REQUIRE(o.Is<int>());
+            REQUIRE_FALSE(o.Is<double>());
+            Moon::Pop();
+        }
+        {
+            Moon::Push(20.0);
+            auto o = Moon::MakeObjectFromIndex();
+            REQUIRE(o.Is<double>());
+            REQUIRE_FALSE(o.Is<int>());
+            Moon::Pop();
+        }
+    }
+
     SECTION("object lifetime") {
         int topRefIndex = (int)lua_rawlen(Moon::GetState(), LUA_REGISTRYINDEX);
         BEGIN_STACK_GUARD
 
         {
             Moon::Push(20);
-            auto o = Moon::MakeObject();
+            auto o = Moon::MakeObjectFromIndex();
             Moon::Pop();
             REQUIRE(o.IsLoaded());
             REQUIRE(o.GetKey() == topRefIndex + 1);
@@ -123,7 +145,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 
         {  // copy
             Moon::Push(20);
-            auto o = Moon::MakeObject();
+            auto o = Moon::MakeObjectFromIndex();
             Moon::Pop();
             auto o2 = o;
             moon::Object o3;
@@ -139,7 +161,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 
         {  // move
             Moon::Push(20);
-            auto o = Moon::MakeObject();
+            auto o = Moon::MakeObjectFromIndex();
             Moon::Pop();
             REQUIRE(o.IsLoaded());
             int key = o.GetKey();
@@ -158,7 +180,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 
         moon::Object o{};
         Moon::Push(20);
-        auto o2 = Moon::MakeObject();
+        auto o2 = Moon::MakeObjectFromIndex();
         Moon::Pop();
 
         o.As<int>();
@@ -178,16 +200,17 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 SCENARIO("callable objects", "[object][functions][basic]") {
     Moon::Init();
 
-    GIVEN("some valid functions in lua stack") {
-        BEGIN_STACK_GUARD
+    BEGIN_STACK_GUARD
 
+    GIVEN("some valid functions in lua stack") {
         REQUIRE(Moon::RunCode("return function() return true end"));
         REQUIRE(Moon::RunCode("test = 'failed'; return function() test = 'passed' end"));
         REQUIRE(Moon::RunCode("test = 'failed'; return function(a) test = a end"));
         REQUIRE(Moon::RunCode("return function(a, b, c) return a == 'passed' and b and c == 1 end"));
 
         WHEN("we try to create some callable objects") {
-            std::vector<moon::Object> functions = {Moon::MakeObject(1), Moon::MakeObject(2), Moon::MakeObject(3), Moon::MakeObject(4)};
+            std::vector<moon::Object> functions = {Moon::MakeObjectFromIndex(1), Moon::MakeObjectFromIndex(2), Moon::MakeObjectFromIndex(3),
+                                                   Moon::MakeObjectFromIndex(4)};
 
             THEN("objects should be loaded") {
                 for (const auto& f : functions) {
@@ -205,9 +228,9 @@ SCENARIO("callable objects", "[object][functions][basic]") {
 
             AND_THEN("objects can be called with Call method") {
                 REQUIRE(functions[0].Call<bool>());
-                functions[1].Call();
+                functions[1].Call<void>();
                 REQUIRE(Moon::Get<std::string>("test") == "passed");
-                functions[2].Call("passed");
+                functions[2].Call<void>("passed");
                 REQUIRE(Moon::Get<std::string>("test") == "passed");
                 REQUIRE(functions[3].Call<bool>("passed", true, 1));
             }
@@ -228,18 +251,16 @@ SCENARIO("callable objects", "[object][functions][basic]") {
         }
 
         Moon::Pop(4);
-        END_STACK_GUARD
+        CHECK_STACK_GUARD
     }
 
     AND_GIVEN("some faulty functions in lua stack") {
-        BEGIN_STACK_GUARD
-
         REQUIRE(Moon::RunCode("test = false; return function() assert(test); return 'failed' end"));
         REQUIRE(Moon::RunCode("return function(a) assert(a); return 'failed'; end"));
         Moon::Push("string");
 
         WHEN("we try to create some callable objects") {
-            std::vector<moon::Object> functions = {Moon::MakeObject(1), Moon::MakeObject(2), Moon::MakeObject(3), {}};
+            std::vector<moon::Object> functions = {Moon::MakeObjectFromIndex(1), Moon::MakeObjectFromIndex(2), Moon::MakeObjectFromIndex(3), {}};
 
             THEN("objects should be loaded except one") {
                 for (size_t i = 0; i < 3; ++i) {
@@ -258,10 +279,10 @@ SCENARIO("callable objects", "[object][functions][basic]") {
 
             AND_THEN("calling objects should generate errors") {
                 for (const auto& f : functions) {
-                    f.Call();
+                    f.Call<void>();
                     REQUIRE(Moon::HasError());
                     Moon::ClearError();
-                    f.Call(false);
+                    f.Call<void>(false);
                     REQUIRE(Moon::HasError());
                     Moon::ClearError();
                     f.Call<int>();
@@ -286,9 +307,11 @@ SCENARIO("callable objects", "[object][functions][basic]") {
         }
 
         Moon::Pop(3);
-        END_STACK_GUARD
+        CHECK_STACK_GUARD
     }
 
+    END_STACK_GUARD
     REQUIRE_FALSE(Moon::HasError());
+
     Moon::CloseState();
 }
