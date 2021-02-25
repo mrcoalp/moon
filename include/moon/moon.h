@@ -513,27 +513,89 @@ struct STLFunctionSpread;
 
 class Marshalling {
 public:
+#define assert_lua_type(_check, _type)            \
+    if (!_check) {                                \
+        std::stringstream ss;                     \
+        ss << "Lua type check failed: " << _type; \
+        throw std::runtime_error(ss.str());       \
+    }
+
+    template <typename R>
+    static IsBool<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isboolean(L, index);
+    }
+
+    template <typename R>
+    static IsIntegral<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isinteger(L, index);
+    }
+
+    template <typename R>
+    static IsFloatingPoint<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isnumber(L, index) && !lua_isinteger(L, index);
+    }
+
+    template <typename R>
+    static IsString<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isstring(L, index);
+    }
+
+    template <typename R>
+    static IsCString<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isstring(L, index);
+    }
+
+    template <typename R>
+    static IsLuaRef<R, bool> CheckValue(lua_State* L, int index) {
+        return true;
+    }
+
+    template <typename R>
+    static IsPointer<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isuserdata(L, index);
+    }
+
+    template <typename R>
+    static IsBinding<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isuserdata(L, index);
+    }
+
+    template <typename R>
+    static IsVector<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_istable(L, index);
+    }
+
+    template <typename R>
+    static IsMap<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_istable(L, index);
+    }
+
+    template <typename R>
+    static IsFunction<R, bool> CheckValue(lua_State* L, int index) {
+        return lua_isfunction(L, index);
+    }
+
     template <typename R>
     static IsBool<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isboolean(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "boolean");
         return lua_toboolean(L, index) != 0;
     }
 
     template <typename R>
     static IsIntegral<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isinteger(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "integer");
         return lua_tointeger(L, index);
     }
 
     template <typename R>
     static IsFloatingPoint<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isnumber(L, index) && !lua_isinteger(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "number");
         return static_cast<R>(lua_tonumber(L, index));
     }
 
     template <typename R>
     static IsString<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isstring(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "string");
         size_t size;
         const char* buffer = lua_tolstring(L, index, &size);
         return R{buffer, size};
@@ -541,7 +603,7 @@ public:
 
     template <typename R>
     static IsCString<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isstring(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "string");
         return lua_tostring(L, index);
     }
 
@@ -552,19 +614,19 @@ public:
 
     template <typename R>
     static IsPointer<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isuserdata(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "userdata");
         return *static_cast<R*>(lua_touserdata(L, index));
     }
 
     template <typename R>
     static IsBinding<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isuserdata(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "userdata");
         return *GetValue<R*>(L, index);
     }
 
     template <typename R>
     static IsVector<R> GetValue(lua_State* L, int index) {
-        assertType(lua_istable(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "table");
         ensureValidIndexInRecursion(index, L);
         auto size = (size_t)lua_rawlen(L, index);
         R vec;
@@ -584,7 +646,7 @@ public:
 
     template <typename R>
     static IsMap<R> GetValue(lua_State* L, int index) {
-        assertType(lua_istable(L, index));
+        assert_lua_type(CheckValue<R>(L, index), "table");
         ensureValidIndexInRecursion(index, L);
         lua_pushnil(L);
         R map;
@@ -597,9 +659,8 @@ public:
 
     template <typename R>
     static IsFunction<R> GetValue(lua_State* L, int index) {
-        assertType(lua_isfunction(L, index));
-        ensureValidIndexInRecursion(index, L);
-        return STLFunctionSpread<R>(L, index).func;
+        assert_lua_type(CheckValue<R>(L, index), "function");
+        return STLFunctionSpread<R>(L, index).functor;
     }
 
     template <typename T>
@@ -691,17 +752,6 @@ public:
 
 private:
     /**
-     * @brief Asserts the type of value.
-     *
-     * @param check Whether or not the type check was successful.
-     */
-    static void assertType(int check) {
-        if (check != 1) {
-            throw std::runtime_error("Lua type check failed!");
-        }
-    }
-
-    /**
      * @brief When using more complex data containers (like maps or vectors) recursion inside this can not be made with negative indexes.
      * If we try to get, for example, a std::vector<std::vector<int>> and provide -1 as index, in the recursive call to get the value, we would always
      * access the last value in the stack, which is not the right element (since we push indexes of the vector). We must, in this case, convert to the
@@ -715,6 +765,24 @@ private:
             index = lua_gettop(L) + index + 1;
         }
     }
+};
+
+/// Pops specified elements from lua stack when destroyed.
+class PopGuard {
+public:
+    /// Pops specified elements from lua stack when destroyed - ctor.
+    /// \param L Lua state to pop from.
+    /// \param elements Number of elements to pop from stack. Defaults to 1.
+    explicit PopGuard(lua_State* L, int elements = 1) : m_state(L), m_elements(elements) {}
+
+    /// Pops specified elements from lua stack when destroyed - dtor.
+    ~PopGuard() { lua_pop(m_state, m_elements); }
+
+private:
+    /// Lua state pointer.
+    lua_State* m_state{nullptr};
+    /// Number of elements to pop.
+    int m_elements{1};
 };
 
 class Object : public Reference {
@@ -789,14 +857,8 @@ public:
             return false;
         }
         Push();
-        bool result = true;
-        try {
-            Marshalling::GetValue<T>(m_state, -1);
-        } catch (const std::exception& e) {
-            result = false;
-        }
-        lua_pop(m_state, 1);
-        return result;
+        PopGuard guard{m_state};
+        return Marshalling::CheckValue<T>(m_state, -1);
     }
 
     template <typename Ret>
@@ -806,14 +868,13 @@ public:
             return {};
         }
         Push();
-        Ret ret{};
+        PopGuard guard{m_state};
         try {
-            ret = std::move(Marshalling::GetValue<Ret>(m_state, -1));
+            return std::move(Marshalling::GetValue<Ret>(m_state, -1));
         } catch (const std::exception& e) {
             validate(e.what());
         }
-        lua_pop(m_state, 1);
-        return ret;
+        return {};
     }
 
     template <typename Ret, typename... Args>
@@ -838,14 +899,13 @@ public:
         if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 1, 0)))) {
             return {};
         }
-        Ret ret{};
+        PopGuard guard{m_state};
         try {
-            ret = std::move(Marshalling::GetValue<Ret>(m_state, -1));
+            return std::move(Marshalling::GetValue<Ret>(m_state, -1));
         } catch (const std::exception& e) {
             validate(e.what());
         }
-        lua_pop(m_state, 1);
-        return ret;
+        return {};
     }
 
     template <typename... Args>
@@ -891,13 +951,21 @@ private:
     lua_State* m_state{nullptr};
 };
 
+/// Creates a lambda function (property `functor`) with specified template arguments signature that calls a moon::Object with same signature.
+/// Basically a Lua function to C++ stl function converter.
+/// \tparam Ret Return type of function.
+/// \tparam Args Arguments type of function.
 template <typename Ret, typename... Args>
 struct STLFunctionSpread<std::function<Ret(Args...)>> {
-    std::function<Ret(Args...)> func;
+    /// Functor that will handle moon::Object.
+    std::function<Ret(Args...)> functor;
 
+    /// ctor
+    /// \param L Lua state to get function from.
+    /// \param index Lua function index in stack.
     STLFunctionSpread(lua_State* L, int index) {
         moon::Object o(L, index);
-        func = [o](Args... args) { return o.Call<Ret>(std::forward<Args>(args)...); };
+        functor = [o](Args... args) { return o.Call<Ret>(std::forward<Args>(args)...); };
     }
 };
 

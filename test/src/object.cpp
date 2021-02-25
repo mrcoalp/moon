@@ -197,6 +197,112 @@ TEST_CASE("dynamic object type", "[object][basic]") {
     Moon::CloseState();
 }
 
+SCENARIO("lua dynamic objects", "[object][basic]") {
+    Moon::Init();
+    BEGIN_STACK_GUARD
+
+    GIVEN("an empty lua stack") {
+        REQUIRE(Moon::GetTop() == 0);
+
+        WHEN("integrals are created directly in lua stack") {
+            int a = 1;
+            unsigned b = 1;
+            uint16_t c = 1;
+            char d = 'a';
+            auto a_ = Moon::MakeObject(a);
+            auto b_ = Moon::MakeObject(b);
+            auto c_ = Moon::MakeObject(c);
+            auto d_ = Moon::MakeObject(d);
+
+            THEN("all types must be valid") {
+                REQUIRE(a_.Is<int>());
+                REQUIRE(b_.Is<unsigned>());
+                REQUIRE(c_.Is<uint16_t>());
+                REQUIRE(d_.Is<char>());
+            }
+
+            AND_THEN("all types can be checked as any integral") {
+                REQUIRE(a_.Is<char>());
+                REQUIRE(b_.Is<uint16_t>());
+                REQUIRE(c_.Is<unsigned>());
+                REQUIRE(d_.Is<int>());
+            }
+
+            AND_THEN("types should not be confused as floating point") {
+                REQUIRE_FALSE(a_.Is<float>());
+                REQUIRE_FALSE(b_.Is<float>());
+                REQUIRE_FALSE(c_.Is<double>());
+                REQUIRE_FALSE(d_.Is<double>());
+            }
+
+            AND_THEN("objects can be converted to integrals") {
+                REQUIRE(a_.As<int>() == 1);
+                REQUIRE(b_.As<unsigned>() == 1);
+                REQUIRE(c_.As<uint16_t>() == 1);
+                REQUIRE(d_.As<char>() == 'a');
+            }
+
+            AND_THEN("objects can be converted to string, to use as index in table") {
+                REQUIRE(a_.As<std::string>() == "1");
+                REQUIRE(b_.As<std::string>() == "1");
+                REQUIRE(c_.As<std::string>() == "1");
+                REQUIRE(d_.As<std::string>() == "97");
+            }
+
+            AND_THEN("trying to convert objects to wrong type raises an error") {
+                a_.As<bool>();
+                REQUIRE(Moon::HasError());
+                Moon::ClearError();
+                b_.As<std::vector<int>>();
+                REQUIRE(Moon::HasError());
+                Moon::ClearError();
+                c_.As<float>();
+                REQUIRE(Moon::HasError());
+                Moon::ClearError();
+                d_.As<double>();
+                REQUIRE(Moon::HasError());
+                Moon::ClearError();
+            }
+
+            CHECK_STACK_GUARD
+        }
+
+        AND_WHEN("floating points are created in lua stack") {
+            float a = 1.f;
+            double b = 1.0;
+            auto a_ = Moon::MakeObject(a);
+            auto b_ = Moon::MakeObject(b);
+
+            THEN("all types must be valid") {
+                REQUIRE(a_.Is<float>());
+                REQUIRE(a_.Is<double>());
+                REQUIRE(b_.Is<float>());
+                REQUIRE(b_.Is<double>());
+            }
+
+            AND_THEN("types should not be confused as integrals") {
+                REQUIRE_FALSE(a_.Is<int>());
+                REQUIRE_FALSE(b_.Is<unsigned>());
+                REQUIRE_FALSE(a_.Is<uint16_t>());
+                REQUIRE_FALSE(b_.Is<char>());
+            }
+
+            AND_THEN("objects can be converted to floating point") {
+                REQUIRE(a_.As<float>() == 1.f);  // TODO: WIll this fail in some systems?
+                REQUIRE(b_.As<double>() == 1.0);
+            }
+
+            CHECK_STACK_GUARD
+        }
+    }
+
+    // TODO: Add more tests with more types.
+
+    END_STACK_GUARD
+    REQUIRE_FALSE(Moon::HasError());
+    Moon::CloseState();
+}
+
 SCENARIO("callable objects", "[object][functions][basic]") {
     Moon::Init();
 

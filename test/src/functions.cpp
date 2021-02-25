@@ -3,7 +3,7 @@
 #include "moon/moon.h"
 #include "stackguard.h"
 
-TEST_CASE("call functions", "[functions]") {
+TEST_CASE("call global lua functions", "[functions]") {
     Moon::Init();
 
     SECTION("no arguments, no return") {
@@ -71,7 +71,7 @@ struct Test {
     static std::string TestCPPStaticFunction(bool passed = false) { return passed ? "passed" : "failed"; }
 };
 
-TEST_CASE("register C++ functions, lambdas", "[functions][basic]") {
+TEST_CASE("register C++ functions, lambdas as global lua functions", "[functions][basic]") {
     Moon::Init();
 
     BEGIN_STACK_GUARD
@@ -125,5 +125,32 @@ TEST_CASE("register C++ functions, lambdas", "[functions][basic]") {
 
     END_STACK_GUARD
 
+    Moon::CloseState();
+}
+
+SCENARIO("get lua function as C++ stl function", "[functions]") {
+    Moon::Init();
+    BEGIN_STACK_GUARD
+
+    GIVEN("a set of lua functions") {
+        REQUIRE(Moon::RunCode("function OnUpdate(data, delta) data.passed = true; assert(data.passed); assert(delta == 2) end"));
+        REQUIRE(Moon::RunCode("return function(a, b, c) return a and b == 2 and c == 'passed' end"));
+
+        WHEN("we get them as stl functions") {
+            auto onUpdate = Moon::Get<std::function<void(moon::LuaMap<moon::Object>, int)>>("OnUpdate");
+            auto anonymous = Moon::Get<std::function<bool(bool, int, std::string)>>(-1);
+
+            THEN("we should be able to call them") {
+                onUpdate(moon::LuaMap<moon::Object>{}, 2);
+                REQUIRE_FALSE(Moon::HasError());
+                REQUIRE(anonymous(true, 2, "passed"));
+            }
+        }
+
+        Moon::Pop();
+    }
+
+    REQUIRE_FALSE(Moon::HasError());
+    END_STACK_GUARD
     Moon::CloseState();
 }
