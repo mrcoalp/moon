@@ -8,6 +8,7 @@
 #include <functional>
 #include <lua.hpp>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
@@ -852,7 +853,7 @@ public:
     void Push() const { Reference::Push(m_state); }
 
     template <typename T>
-    bool Is() {
+    [[nodiscard]] bool Is() const {
         if (!IsLoaded()) {
             return false;
         }
@@ -862,7 +863,7 @@ public:
     }
 
     template <typename Ret>
-    Ret As() {
+    Ret As() const {
         if (!IsLoaded()) {
             validate("Tried to get value from an Object not loaded");
             return {};
@@ -969,15 +970,6 @@ struct STLFunctionSpread<std::function<Ret(Args...)>> {
     }
 };
 
-template <int... is>
-struct Indices {};
-
-template <int n, int... is>
-struct BuildIndices : BuildIndices<n - 1, n - 1, is...> {};
-
-template <int... is>
-struct BuildIndices<0, is...> : Indices<is...> {};
-
 class Invokable {
 public:
     virtual ~Invokable() = default;
@@ -1029,13 +1021,13 @@ class InvokableSTLFunction : public Invokable {
 public:
     explicit InvokableSTLFunction(std::function<Ret(Args...)> func_) : func(std::move(func_)) {}
 
-    inline int Call(lua_State* L) const final { return callHelper(BuildIndices<sizeof...(Args)>{}, func, L); }
+    inline int Call(lua_State* L) const final { return callHelper(std::make_index_sequence<sizeof...(Args)>{}, func, L); }
 
 private:
     std::function<Ret(Args...)> func;
 
-    template <int... indices, typename RetHelper>
-    static int callHelper(Indices<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
+    template <size_t... indices, typename RetHelper>
+    static int callHelper(std::index_sequence<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
         try {
             auto output = func(std::move(Marshalling::GetValue<Args>(L, indices + 1))...);
             Marshalling::PushValue(L, output);
@@ -1048,8 +1040,8 @@ private:
         return 1;
     }
 
-    template <int... indices>
-    static int callHelper(Indices<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
+    template <size_t... indices>
+    static int callHelper(std::index_sequence<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
         try {
             func(std::move(Marshalling::GetValue<Args>(L, indices + 1))...);
         } catch (const std::exception& e) {

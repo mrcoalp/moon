@@ -208,60 +208,61 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
             int a = 1;
             unsigned b = 1;
             uint16_t c = 1;
-            char d = 'a';
+            char d = 1;
             auto a_ = Moon::MakeObject(a);
             auto b_ = Moon::MakeObject(b);
             auto c_ = Moon::MakeObject(c);
             auto d_ = Moon::MakeObject(d);
+            moon::Object objs[] = {a_, b_, c_, d_};
 
-            THEN("all types must be valid") {
-                REQUIRE(a_.Is<int>());
-                REQUIRE(b_.Is<unsigned>());
-                REQUIRE(c_.Is<uint16_t>());
-                REQUIRE(d_.Is<char>());
-            }
-
-            AND_THEN("all types can be checked as any integral") {
-                REQUIRE(a_.Is<char>());
-                REQUIRE(b_.Is<uint16_t>());
-                REQUIRE(c_.Is<unsigned>());
-                REQUIRE(d_.Is<int>());
+            THEN("all types must be valid and checked as any integral") {
+                for (const auto& obj : objs) {
+                    REQUIRE(obj.GetType() == moon::LuaType::Number);
+                    REQUIRE(obj.Is<int>());
+                    REQUIRE(obj.Is<unsigned>());
+                    REQUIRE(obj.Is<uint16_t>());
+                    REQUIRE(obj.Is<char>());
+                }
             }
 
             AND_THEN("types should not be confused as floating point") {
-                REQUIRE_FALSE(a_.Is<float>());
-                REQUIRE_FALSE(b_.Is<float>());
-                REQUIRE_FALSE(c_.Is<double>());
-                REQUIRE_FALSE(d_.Is<double>());
+                for (const auto& obj : objs) {
+                    REQUIRE_FALSE(obj.Is<float>());
+                    REQUIRE_FALSE(obj.Is<double>());
+                }
             }
 
             AND_THEN("objects can be converted to integrals") {
-                REQUIRE(a_.As<int>() == 1);
-                REQUIRE(b_.As<unsigned>() == 1);
-                REQUIRE(c_.As<uint16_t>() == 1);
-                REQUIRE(d_.As<char>() == 'a');
+                for (const auto& obj : objs) {
+                    REQUIRE(obj.As<int>() == 1);
+                    REQUIRE(obj.As<unsigned>() == 1);
+                    REQUIRE(obj.As<uint16_t>() == 1);
+                    REQUIRE(obj.As<char>() == 1);
+                }
             }
 
             AND_THEN("objects can be converted to string, to use as index in table") {
-                REQUIRE(a_.As<std::string>() == "1");
-                REQUIRE(b_.As<std::string>() == "1");
-                REQUIRE(c_.As<std::string>() == "1");
-                REQUIRE(d_.As<std::string>() == "97");
+                for (const auto& obj : objs) {
+                    REQUIRE(obj.As<std::string>() == "1");
+                    REQUIRE(strcmp(obj.As<const char*>(), "1") == 0);
+                }
             }
 
             AND_THEN("trying to convert objects to wrong type raises an error") {
-                a_.As<bool>();
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
-                b_.As<std::vector<int>>();
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
-                c_.As<float>();
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
-                d_.As<double>();
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
+                for (const auto& obj : objs) {
+                    obj.As<bool>();
+                    REQUIRE(Moon::HasError());
+                    Moon::ClearError();
+                    obj.As<std::vector<int>>();
+                    REQUIRE(Moon::HasError());
+                    Moon::ClearError();
+                    obj.As<float>();
+                    REQUIRE(Moon::HasError());
+                    Moon::ClearError();
+                    obj.As<double>();
+                    REQUIRE(Moon::HasError());
+                    Moon::ClearError();
+                }
             }
 
             CHECK_STACK_GUARD
@@ -272,23 +273,27 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
             double b = 1.0;
             auto a_ = Moon::MakeObject(a);
             auto b_ = Moon::MakeObject(b);
+            moon::Object objs[] = {a_, b_};
 
             THEN("all types must be valid") {
-                REQUIRE(a_.Is<float>());
-                REQUIRE(a_.Is<double>());
-                REQUIRE(b_.Is<float>());
-                REQUIRE(b_.Is<double>());
+                for (const auto& obj : objs) {
+                    REQUIRE(obj.GetType() == moon::LuaType::Number);
+                    REQUIRE(obj.Is<float>());
+                    REQUIRE(obj.Is<double>());
+                }
             }
 
             AND_THEN("types should not be confused as integrals") {
-                REQUIRE_FALSE(a_.Is<int>());
-                REQUIRE_FALSE(b_.Is<unsigned>());
-                REQUIRE_FALSE(a_.Is<uint16_t>());
-                REQUIRE_FALSE(b_.Is<char>());
+                for (const auto& obj : objs) {
+                    REQUIRE_FALSE(obj.Is<int>());
+                    REQUIRE_FALSE(obj.Is<unsigned>());
+                    REQUIRE_FALSE(obj.Is<uint16_t>());
+                    REQUIRE_FALSE(obj.Is<char>());
+                }
             }
 
             AND_THEN("objects can be converted to floating point") {
-                REQUIRE(a_.As<float>() == 1.f);  // TODO: WIll this fail in some systems?
+                REQUIRE(a_.As<float>() == 1.f);  // TODO(mpinto): WIll this fail in some systems?
                 REQUIRE(b_.As<double>() == 1.0);
             }
 
