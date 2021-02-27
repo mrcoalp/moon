@@ -509,8 +509,73 @@ template <typename T>
 struct Function<std::function<T>> : std::true_type {};
 template <typename T, typename Ret = T>
 using IsFunction = std::enable_if_t<Function<T>::value, Ret>;
+template <typename>
+struct Tuple : std::false_type {};
+template <typename... T>
+struct Tuple<std::tuple<T...>> : std::true_type {};
+template <typename T, typename Ret = T>
+using IsTuple = std::enable_if_t<Tuple<T>::value, Ret>;
+
+/// Internal static helper methods.
+class Helpers {
+public:
+    /// Lua function argument count per C++ args pack
+    /// \tparam Args C++ arguments types.
+    /// \return Number of arguments to call Lua function.
+    template <typename... Args>
+    static size_t ArgsCount() {
+        return sum(ResultsCount<Args>()...);
+    }
+
+    /// Lua function return results count per C++ type.
+    /// Count when using tuple is the same of tuple size.
+    /// \tparam T C++ type to check.
+    /// \return Number of return results of Lua function.
+    template <typename T>
+    static std::enable_if_t<Tuple<T>::value, size_t> ResultsCount() {
+        return std::tuple_size_v<T>;
+    }
+
+    /// Lua function return results count per C++ type.
+    /// Count when using other types than tuple is 1.
+    /// \tparam T C++ type to check.
+    /// \return Number of return results of Lua function.
+    template <typename T>
+    static std::enable_if_t<!Tuple<T>::value, size_t> ResultsCount() {
+        return 1;
+    }
+
+private:
+    /// Sum of all arguments. Useful for number of arguments count per type.
+    /// \return Sum of all arguments.
+    static size_t sum() { return 0; }
+
+    /// Sum of all arguments. Useful for number of arguments count per type.
+    /// \tparam T Argument type
+    /// \param first Element to sum.
+    /// \return Sum of all arguments.
+    template <typename T>
+    static size_t sum(T&& first) {
+        return first;
+    }
+
+    /// Sum of all arguments. Useful for number of arguments count per type.
+    /// \tparam T Argument type.
+    /// \tparam Args Rest of arguments types.
+    /// \param first Element to sum.
+    /// \param rest Rest of elements to sum.
+    /// \return Sum of all arguments.
+    template <typename T, typename... Args>
+    static size_t sum(T&& first, Args&&... rest) {
+        return first + sum(rest...);
+    }
+};
+
 template <typename T>
 struct STLFunctionSpread;
+
+template <typename T>
+struct STLTupleSpread;
 
 class Marshalling {
 public:
@@ -547,7 +612,7 @@ public:
     }
 
     template <typename R>
-    static IsLuaRef<R, bool> CheckValue(lua_State* L, int index) {
+    static IsLuaRef<R, bool> CheckValue(lua_State*, int) {
         return true;
     }
 
@@ -628,7 +693,7 @@ public:
     template <typename R>
     static IsVector<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "table");
-        ensureValidIndexInRecursion(index, L);
+        ensurePositiveIndex(index, L);
         auto size = (size_t)lua_rawlen(L, index);
         R vec;
         vec.reserve(size);
@@ -642,26 +707,32 @@ public:
             vec.emplace_back(std::move(GetValue<typename R::value_type>(L, lua_gettop(L))));
             lua_pop(L, 1);
         }
-        return vec;
+        return std::move(vec);
     }
 
     template <typename R>
     static IsMap<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "table");
-        ensureValidIndexInRecursion(index, L);
+        ensurePositiveIndex(index, L);
         lua_pushnil(L);
         R map;
         while (lua_next(L, index) != 0) {
             map.emplace(std::move(GetValue<std::string>(L, -2)), std::move(GetValue<typename R::mapped_type>(L, lua_gettop(L))));
             lua_pop(L, 1);
         }
-        return map;
+        return std::move(map);
     }
 
     template <typename R>
     static IsFunction<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "function");
-        return STLFunctionSpread<R>(L, index).functor;
+        return STLFunctionSpread<R>::GetFunctor(L, index);
+    }
+
+    template <typename R>
+    static IsTuple<R> GetValue(lua_State* L, int index) {
+        ensurePositiveIndex(index, L);
+        return STLTupleSpread<R>::GetTuple(L, index);
     }
 
     template <typename T>
@@ -730,6 +801,11 @@ public:
     }
 
     template <typename T>
+    static IsTuple<T, void> PushValue(lua_State* L, T value) {
+        STLTupleSpread<T>::PushTuple(L, value);
+    }
+
+    template <typename T>
     static void PushValue(lua_State* L, T* value, const char* name) {
         auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
         *a = value;
@@ -761,7 +837,7 @@ private:
      * @param index Index to check and adapt if needed.
      * @param L Lua state pointer.
      */
-    static void ensureValidIndexInRecursion(int& index, lua_State* L) {
+    static void ensurePositiveIndex(int& index, lua_State* L) {
         if (index < 0) {
             index = lua_gettop(L) + index + 1;
         }
@@ -886,7 +962,7 @@ public:
         }
         Push();
         Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-        validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 0, 0)));
+        validate(Marshalling::GetError(m_state, lua_pcall(m_state, Helpers::ArgsCount<Args...>(), 0, 0)));
     }
 
     template <typename Ret, typename... Args>
@@ -897,10 +973,10 @@ public:
         }
         Push();
         Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, sizeof...(Args), 1, 0)))) {
+        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, Helpers::ArgsCount<Args...>(), Helpers::ResultsCount<Ret>(), 0)))) {
             return {};
         }
-        PopGuard guard{m_state};
+        PopGuard guard{m_state, (int)Helpers::ResultsCount<Ret>()};
         try {
             return std::move(Marshalling::GetValue<Ret>(m_state, -1));
         } catch (const std::exception& e) {
@@ -958,15 +1034,53 @@ private:
 /// \tparam Args Arguments type of function.
 template <typename Ret, typename... Args>
 struct STLFunctionSpread<std::function<Ret(Args...)>> {
-    /// Functor that will handle moon::Object.
-    std::function<Ret(Args...)> functor;
+    /// Returns functor that holds callable moon object with specified return and argument types.
+    /// \param L Lua stack.
+    /// \param index Index in Lua stack to get function from.
+    /// \return STL function that will call moon object.
+    static std::function<Ret(Args...)> GetFunctor(lua_State* L, int index) {
+        Object obj(L, index);
+        return std::move([obj](Args... args) { return obj.Call<Ret>(std::forward<Args>(args)...); });
+    }
+};
 
-    /// ctor
-    /// \param L Lua state to get function from.
-    /// \param index Lua function index in stack.
-    STLFunctionSpread(lua_State* L, int index) {
-        moon::Object o(L, index);
-        functor = [o](Args... args) { return o.Call<Ret>(std::forward<Args>(args)...); };
+/// Helper to get and push tuples to Lua stack.
+/// \tparam T Tuple type to operate with.
+template <typename T>
+struct STLTupleSpread {
+public:
+    /// Getter for specified tuple type from Lua stack.
+    /// \param L Lua stack.
+    /// \param index Index to end. Last index to get element from.
+    /// \return Desired tuple.
+    static T GetTuple(lua_State* L, int index) {
+        constexpr size_t elements = std::tuple_size_v<T>;
+        return getHelper(std::make_index_sequence<elements>{}, L, index - elements + 1);
+    }
+
+    /// Pushes tuple to Lua stack.
+    /// \param L Lua stack.
+    /// \param value Tuple to push.
+    static void PushTuple(lua_State* L, T value) { pushHelper(std::make_index_sequence<std::tuple_size_v<T>>{}, L, value); }
+
+private:
+    /// Tuple index based expander helper method.
+    /// \tparam indices Each of the tuple indices.
+    /// \param L Lua stack.
+    /// \param index Index in stack of first element to add to tuple.
+    /// \return Desired tuple.
+    template <size_t... indices>
+    static T getHelper(std::index_sequence<indices...>, lua_State* L, int index) {
+        return std::make_tuple(Marshalling::GetValue<std::tuple_element_t<indices, T>>(L, index + indices)...);
+    }
+
+    /// Tuple index based expander helper method.
+    /// \tparam indices Each of the tuple indices.
+    /// \param L Lua stack.
+    /// \param value Tuple to push.
+    template <size_t... indices>
+    static void pushHelper(std::index_sequence<indices...>, lua_State* L, T value) {
+        (Marshalling::PushValue(L, std::get<indices>(value)), ...);
     }
 };
 

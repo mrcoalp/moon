@@ -135,19 +135,25 @@ SCENARIO("get lua function as C++ stl function", "[functions]") {
     GIVEN("a set of lua functions") {
         REQUIRE(Moon::RunCode("function OnUpdate(data, delta) data.passed = true; assert(data.passed); assert(delta == 2) end"));
         REQUIRE(Moon::RunCode("return function(a, b, c) return a and b == 2 and c == 'passed' end"));
+        REQUIRE(Moon::RunCode("return function(a, b, c) return a, b, c end"));
 
         WHEN("we get them as stl functions") {
             auto onUpdate = Moon::Get<std::function<void(moon::LuaMap<moon::Object>, int)>>("OnUpdate");
-            auto anonymous = Moon::Get<std::function<bool(bool, int, std::string)>>(-1);
+            auto anonymous = Moon::Get<std::function<bool(bool, int, std::string)>>(-2);
+            auto tupleReturn = Moon::Get<std::function<std::tuple<int, std::string, bool>(std::tuple<int, std::string, bool>)>>(-1);
 
             THEN("we should be able to call them") {
                 onUpdate(moon::LuaMap<moon::Object>{}, 2);
                 REQUIRE_FALSE(Moon::HasError());
                 REQUIRE(anonymous(true, 2, "passed"));
+                auto t = tupleReturn(std::make_tuple(1, "passed", true));
+                REQUIRE(std::get<0>(t) == 1);
+                REQUIRE(std::get<1>(t) == "passed");
+                REQUIRE(std::get<2>(t));
             }
         }
 
-        Moon::Pop();
+        Moon::Pop(2);
     }
 
     REQUIRE_FALSE(Moon::HasError());

@@ -247,8 +247,9 @@ TEST_CASE("push and get values, data containers", "[basic]") {
 
     SECTION("get a vector") {
         BEGIN_STACK_GUARD
-        Moon::RunCode("vec = {1, 2, 3}");
+        Moon::RunCode("vec = {1, 2, 3, nil, 5}");
         auto v = Moon::Get<std::vector<int>>("vec");
+        REQUIRE(v.size() == 3);  // Stop when encountering null value
         REQUIRE(v[1] == 2);
         END_STACK_GUARD
     }
