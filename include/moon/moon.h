@@ -534,6 +534,18 @@ struct tuple<std::tuple<T...>> : std::true_type {
 template <typename T, typename Ret = T>
 using is_tuple = std::enable_if_t<tuple<T>::value, Ret>;
 
+template <typename T, typename... Ts>
+constexpr bool none_is_v = !std::disjunction_v<std::is_same<T, Ts>...>;
+
+template <typename T, typename... Ts>
+constexpr bool all_are_v = std::conjunction_v<std::is_same<T, Ts>...>;
+
+template <size_t size, typename... Ts>
+constexpr bool sizeof_is_v = size == sizeof...(Ts);
+
+template <typename... Ts>
+using multi_ret_t = std::conditional_t<sizeof_is_v<1, Ts...>, std::tuple_element_t<0, std::tuple<Ts...>>, std::tuple<Ts...>>;
+
 template <typename T, T... elements>
 struct sum {
     static const T value{static_cast<T>(0)};  // 0 if no elements
@@ -566,9 +578,6 @@ constexpr size_t count_expected_v = sum_v<size_t, lua_call_count<Ts>::value...>;
 
 template <typename T>
 struct STLFunctionSpread;
-
-template <typename T>
-struct STLTupleSpread;
 
 /// Abstracts interaction with Lua stack per C type. Gets and pushes values to/from Lua stack and validates types.
 class Marshalling {
@@ -721,7 +730,8 @@ public:
     template <typename R>
     static detail::is_tuple<R> GetValue(lua_State* L, int index) {
         ensurePositiveIndex(index, L);
-        return STLTupleSpread<R>::GetTuple(L, index);
+        constexpr size_t elements = std::tuple_size_v<R>;
+        return getTupleHelper<R>(std::make_index_sequence<elements>{}, L, index - elements + 1);
     }
 
     template <typename T>
@@ -790,21 +800,8 @@ public:
     }
 
     template <typename T>
-    static detail::is_tuple<T, void> PushValue(lua_State* L, T value) {
-        STLTupleSpread<T>::PushTuple(L, value);
-    }
-
-    template <typename T>
-    static void PushValue(lua_State* L, T* value, const char* name) {
-        auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
-        *a = value;
-        luaL_getmetatable(L, name);
-        lua_setmetatable(L, -2);
-    }
-
-    template <typename... Args>
-    static void PushValues(lua_State* L, Args&&... args) {
-        (PushValue(L, std::forward<Args>(args)), ...);
+    static detail::is_tuple<T, void> PushValue(lua_State* L, T&& value) {
+        pushTupleHelper(std::make_index_sequence<std::tuple_size_v<T>>{}, L, std::forward<T>(value));
     }
 
     static std::optional<std::string> GetError(lua_State* L, int status, const char* errMessage = "") {
@@ -828,6 +825,27 @@ private:
             index = lua_gettop(L) + index + 1;
         }
     }
+
+    /// Tuple index based expander helper method.
+    /// \tparam T Tuple type.
+    /// \tparam indices Each of the tuple indices.
+    /// \param L Lua stack.
+    /// \param index Index in stack of first element to add to tuple.
+    /// \return Desired tuple.
+    template <typename T, size_t... indices>
+    static T getTupleHelper(std::index_sequence<indices...>, lua_State* L, int index) {
+        return std::make_tuple(GetValue<std::tuple_element_t<indices, T>>(L, index + indices)...);
+    }
+
+    /// Tuple index based expander helper method.
+    /// \tparam T Tuple type.
+    /// \tparam indices Each of the tuple indices.
+    /// \param L Lua stack.
+    /// \param value Tuple to push.
+    template <typename T, size_t... indices>
+    static void pushTupleHelper(std::index_sequence<indices...>, lua_State* L, T&& value) {
+        (PushValue(L, std::get<indices>(std::forward<T>(value))), ...);
+    }
 };
 
 /// Pops specified elements from lua stack when destroyed.
@@ -846,6 +864,30 @@ private:
     lua_State* m_state{nullptr};
     /// Number of elements to pop.
     int m_elements{1};
+};
+
+struct Stack {
+    template <typename... Rs>
+    static decltype(auto) Get(lua_State* L, int index) {
+        if constexpr (sizeof...(Rs) < 2) {
+            return Marshalling::GetValue<std::tuple_element_t<0, std::tuple<Rs...>>>(L, index);
+        } else {
+            return Marshalling::GetValue<std::tuple<Rs...>>(L, index);
+        }
+    }
+
+    template <typename... Ts>
+    static void Push(lua_State* L, Ts&&... values) {
+        (Marshalling::PushValue(L, std::forward<Ts>(values)), ...);
+    }
+
+    template <typename T>
+    static void PushUserData(lua_State* L, T* value, const char* metatable) {
+        auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
+        *a = value;
+        luaL_getmetatable(L, metatable);
+        lua_setmetatable(L, -2);
+    }
 };
 
 /// Any Lua object retrieved directly from stack and saved as reference.
@@ -932,7 +974,7 @@ public:
         Push();
         PopGuard guard{m_state};
         try {
-            return std::move(Marshalling::GetValue<Ret>(m_state, -1));
+            return std::move(Stack::Get<Ret>(m_state, -1));
         } catch (const std::exception& e) {
             validate(e.what());
         }
@@ -944,14 +986,14 @@ public:
     /// \tparam Args Arguments types.
     /// \param args Arguments to call function with.
     /// \return Void.
-    template <typename Ret, typename... Args>
-    std::enable_if_t<std::is_void_v<Ret>, void> Call(Args&&... args) const {
+    template <typename... Ret, typename... Args>
+    std::enable_if_t<detail::sizeof_is_v<1, Ret...> && detail::all_are_v<void, Ret...>, void> Call(Args&&... args) const {
         if (!IsLoaded()) {
             validate("Tried to call an Object not loaded");
             return;
         }
         Push();
-        Marshalling::PushValues(m_state, std::forward<Args>(args)...);
+        Stack::Push(m_state, std::forward<Args>(args)...);
         validate(Marshalling::GetError(m_state, lua_pcall(m_state, detail::count_expected_v<Args...>, 0, 0)));
     }
 
@@ -960,20 +1002,20 @@ public:
     /// \tparam Args Arguments types.
     /// \param args Arguments to pass to Lua function.
     /// \return Return value of Lua function.
-    template <typename Ret, typename... Args>
-    std::enable_if_t<!std::is_void_v<Ret>, Ret> Call(Args&&... args) const {
+    template <typename... Ret, typename... Args>
+    std::enable_if_t<detail::none_is_v<void, Ret...>, detail::multi_ret_t<Ret...>> Call(Args&&... args) const {
         if (!IsLoaded()) {
             validate("Tried to call an Object not loaded");
             return {};
         }
         Push();
-        Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, detail::count_expected_v<Args...>, detail::count_expected_v<Ret>, 0)))) {
+        Stack::Push(m_state, std::forward<Args>(args)...);
+        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, detail::count_expected_v<Args...>, detail::count_expected_v<Ret...>, 0)))) {
             return {};
         }
-        PopGuard guard{m_state, detail::count_expected_v<Ret>};
+        PopGuard guard{m_state, detail::count_expected_v<Ret...>};
         try {
-            return std::move(Marshalling::GetValue<Ret>(m_state, -1));
+            return std::move(Stack::Get<Ret...>(m_state, -1));
         } catch (const std::exception& e) {
             validate(e.what());
         }
@@ -1046,46 +1088,6 @@ struct STLFunctionSpread<std::function<Ret(Args...)>> {
     }
 };
 
-/// Helper to get and push tuples to Lua stack.
-/// \tparam T Tuple type to operate with.
-template <typename T>
-struct STLTupleSpread {
-public:
-    /// Getter for specified tuple type from Lua stack.
-    /// \param L Lua stack.
-    /// \param index Index to end. Last index to get element from.
-    /// \return Desired tuple.
-    static T GetTuple(lua_State* L, int index) {
-        constexpr size_t elements = std::tuple_size_v<T>;
-        return getHelper(std::make_index_sequence<elements>{}, L, index - elements + 1);
-    }
-
-    /// Pushes tuple to Lua stack.
-    /// \param L Lua stack.
-    /// \param value Tuple to push.
-    static void PushTuple(lua_State* L, T value) { pushHelper(std::make_index_sequence<std::tuple_size_v<T>>{}, L, value); }
-
-private:
-    /// Tuple index based expander helper method.
-    /// \tparam indices Each of the tuple indices.
-    /// \param L Lua stack.
-    /// \param index Index in stack of first element to add to tuple.
-    /// \return Desired tuple.
-    template <size_t... indices>
-    static T getHelper(std::index_sequence<indices...>, lua_State* L, int index) {
-        return std::make_tuple(Marshalling::GetValue<std::tuple_element_t<indices, T>>(L, index + indices)...);
-    }
-
-    /// Tuple index based expander helper method.
-    /// \tparam indices Each of the tuple indices.
-    /// \param L Lua stack.
-    /// \param value Tuple to push.
-    template <size_t... indices>
-    static void pushHelper(std::index_sequence<indices...>, lua_State* L, T value) {
-        (Marshalling::PushValue(L, std::get<indices>(value)), ...);
-    }
-};
-
 class Invokable {
 public:
     virtual ~Invokable() = default;
@@ -1146,7 +1148,7 @@ private:
     static int callHelper(std::index_sequence<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
         try {
             auto output = func(std::move(Marshalling::GetValue<Args>(L, indices + 1))...);
-            Marshalling::PushValue(L, output);
+            Stack::Push(L, output);
         } catch (const std::exception& e) {
             if (s_reportError) {
                 s_reportError(e.what());
@@ -1358,10 +1360,10 @@ public:
     /// \tparam R C type to cast Lua object to.
     /// \param index Index of element in stack.
     /// \return C object.
-    template <typename R>
-    static inline R Get(const int index = 1) {
+    template <typename... R>
+    static inline moon::detail::multi_ret_t<R...> Get(const int index = 1) {
         try {
-            return std::move(moon::Marshalling::GetValue<R>(s_state, index));
+            return std::move(moon::Stack::Get<R...>(s_state, index));
         } catch (const std::exception& e) {
             error(e.what());
         }
@@ -1394,8 +1396,8 @@ public:
     /// \tparam T Value type.
     /// \param value Value pushed to Lua stack.
     template <typename T>
-    static void Push(T value) {
-        moon::Marshalling::PushValue(s_state, value);
+    static void Push(T&& value) {
+        moon::Stack::Push(s_state, std::forward<T>(value));
     }
 
     /// Push global variable to Lua stack.
@@ -1403,8 +1405,8 @@ public:
     /// \param name Variable name.
     /// \param value Value pushed to Lua stack.
     template <typename T>
-    static void Push(const char* name, T value) {
-        Push(value);
+    static void Push(const char* name, T&& value) {
+        Push(std::forward<T>(value));
         SetGlobalVariable(name);
     }
 
@@ -1450,7 +1452,7 @@ public:
     template <typename Func>
     static void RegisterFunction(const std::string& name, Func&& func) {
         auto deducedFunc = std::function{std::forward<Func>(func)};
-        moon::Marshalling::PushValue(s_state, new moon::InvokableSTLFunction(deducedFunc), moon::LUA_INVOKABLE_HOLDER_META_NAME);
+        moon::Stack::PushUserData(s_state, new moon::InvokableSTLFunction(deducedFunc), moon::LUA_INVOKABLE_HOLDER_META_NAME);
         SetGlobalVariable(name.c_str());
     }
 

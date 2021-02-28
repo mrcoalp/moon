@@ -389,6 +389,7 @@ SCENARIO("callable objects", "[object][functions][basic]") {
 
             AND_THEN("multiple values can be returned in call") {
                 REQUIRE(std::get<1>(functions[4].Call<std::tuple<std::string, bool, int>>("passed", true, 1)));
+                REQUIRE(std::get<1>(functions[4].Call<std::string, bool, int>("passed", true, 1)));
             }
 
             AND_THEN("objects can be called with () operator") {
