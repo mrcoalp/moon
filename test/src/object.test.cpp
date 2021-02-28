@@ -25,6 +25,7 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 
         REQUIRE(Moon::RunCode("return {x = 2, y = 'passed', z = {g = true, w = {1, 2, 3}, r = 3.14}}"));
         auto m = Moon::MakeObjectFromIndex();
+        REQUIRE(m.GetState() == Moon::GetState());
         REQUIRE(m.IsLoaded());
         REQUIRE(m.GetType() == moon::LuaType::Table);
         m.Unload();

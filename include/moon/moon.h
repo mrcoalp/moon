@@ -62,6 +62,7 @@ enum class LuaType {
     Thread = LUA_TTHREAD
 };
 
+/// Creates a reference of Lua object for specified index and stack in Lua registry.
 class Reference {
 public:
     Reference() = default;
@@ -85,19 +86,15 @@ public:
         return *this;
     }
 
+    /// Getter for the key identifier of the reference.
+    /// \return Integer identifier.
     [[nodiscard]] inline int GetKey() const { return m_key; }
 
-    /**
-     * @brief Checks if key is set, and actions are allowed.
-     *
-     * @return true Valid actions, key is set.
-     * @return false Invalid actions, key is not set.
-     */
+    /// Checks if key is set, and actions are allowed.
+    /// \return Whether or not the reference is valid.
     [[nodiscard]] inline bool IsLoaded() const { return m_key != LUA_NOREF && m_key != LUA_REFNIL; }
 
-    /**
-     * @brief Unloads reference from lua metatable and resets key.
-     */
+    /// Unloads reference from Lua registry and resets key.
     void Unload(lua_State* L) {
         if (IsLoaded()) {
             luaL_unref(L, LUA_REGISTRYINDEX, m_key);
@@ -105,9 +102,7 @@ public:
         }
     }
 
-    /**
-     * @brief Push value to stack.
-     */
+    /// Pushed reference to specified stack.
     void Push(lua_State* L) const {
         if (!IsLoaded()) {
             if (L != nullptr) {
@@ -118,11 +113,9 @@ public:
         lua_rawgeti(L, LUA_REGISTRYINDEX, m_key);
     }
 
-    /**
-     * @brief Getter for the type of stored ref. Returns null if no reference was created.
-     *
-     * @return Type of ref stored.
-     */
+    /// Getter for the type of stored reference. Returns null if no reference was created.
+    /// \param L Lua stack.
+    /// \return Moon type.
     [[nodiscard]] LuaType GetType(lua_State* L) const {
         if (!IsLoaded()) {
             return LuaType::Null;
@@ -136,9 +129,7 @@ public:
 protected:
     explicit Reference(int key) : m_key(key) {}
 
-    /**
-     * @brief Key to later retrieve lua function.
-     */
+    /// Reference identifier.
     int m_key{LUA_NOREF};
 };
 
@@ -577,6 +568,7 @@ struct STLFunctionSpread;
 template <typename T>
 struct STLTupleSpread;
 
+/// Abstracts interaction with Lua stack per C type. Gets and pushes values to/from Lua stack and validates types.
 class Marshalling {
 public:
 #define assert_lua_type(_check, _type)            \
@@ -609,11 +601,6 @@ public:
     template <typename R>
     static IsCString<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isstring(L, index);
-    }
-
-    template <typename R>
-    static IsLuaRef<R, bool> CheckValue(lua_State*, int) {
-        return true;
     }
 
     template <typename R>
@@ -650,7 +637,7 @@ public:
     template <typename R>
     static IsIntegral<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "integer");
-        return lua_tointeger(L, index);
+        return static_cast<R>(lua_tointeger(L, index));
     }
 
     template <typename R>
@@ -828,15 +815,12 @@ public:
     }
 
 private:
-    /**
-     * @brief When using more complex data containers (like maps or vectors) recursion inside this can not be made with negative indexes.
-     * If we try to get, for example, a std::vector<std::vector<int>> and provide -1 as index, in the recursive call to get the value, we would always
-     * access the last value in the stack, which is not the right element (since we push indexes of the vector). We must, in this case, convert to the
-     * real index in the stack, by the right order.
-     *
-     * @param index Index to check and adapt if needed.
-     * @param L Lua state pointer.
-     */
+    /// When using more complex data containers (like maps or vectors) recursion inside this can not be made with negative indexes.
+    /// If we try to get, for example, a std::vector and provide -1 as index, in the recursive call to get the value, we would
+    /// always access the last value in the stack, which is not the right element (since we push indexes of the vector). We must, in this case,
+    /// convert to the real index in the stack, by the right order.
+    /// \param index Index to check and convert if negative.
+    /// \param L Lua stack.
     static void ensurePositiveIndex(int& index, lua_State* L) {
         if (index < 0) {
             index = lua_gettop(L) + index + 1;
@@ -862,6 +846,7 @@ private:
     int m_elements{1};
 };
 
+/// Any Lua object retrieved directly from stack and saved as reference.
 class Object : public Reference {
 public:
     Object() = default;
@@ -902,32 +887,27 @@ public:
 
     inline bool operator!=(const Object& other) const { return !(*this == other); }
 
+    /// Error reporter setter.
+    /// \param reporter Reporter to use.
     static inline void SetErrorReporter(const std::function<void(const std::string&)>& reporter) { s_reportError = reporter; }
 
-    /**
-     * @brief Getter for the Lua state.
-     *
-     * @return Lua state pointer.
-     */
+    /// Getter for the Lua state.
+    /// \return Lua state pointer.
     [[nodiscard]] inline lua_State* GetState() const { return m_state; }
 
-    /**
-     * @brief Getter for the type of stored ref. Returns null if no reference was created.
-     *
-     * @return Type of ref stored.
-     */
+    /// Getter for the type of stored ref. Returns null if no reference was created.
+    /// \return Type of ref stored.
     [[nodiscard]] LuaType GetType() const { return Reference::GetType(m_state); }
 
-    /**
-     * @brief Unloads reference from lua metatable and resets key.
-     */
+    /// Unloads reference from lua metatable and resets key.
     void Unload() { Reference::Unload(m_state); }
 
-    /**
-     * @brief Push value to stack.
-     */
+    /// Push value to stack.
     void Push() const { Reference::Push(m_state); }
 
+    /// Checks if Object can be converted to specified C type.
+    /// \tparam T Type to check.
+    /// \return Whether or not Object can be interpreted as specified C type.
     template <typename T>
     [[nodiscard]] bool Is() const {
         if (!IsLoaded()) {
@@ -938,6 +918,9 @@ public:
         return Marshalling::CheckValue<T>(m_state, -1);
     }
 
+    /// Get object as specified C type.
+    /// \tparam Ret Type to get.
+    /// \return Object as C type.
     template <typename Ret>
     Ret As() const {
         if (!IsLoaded()) {
@@ -954,6 +937,11 @@ public:
         return {};
     }
 
+    /// Try to call object as Lua function.
+    /// \tparam Ret Void return specialization.
+    /// \tparam Args Arguments types.
+    /// \param args Arguments to call function with.
+    /// \return Void.
     template <typename Ret, typename... Args>
     std::enable_if_t<std::is_void_v<Ret>, void> Call(Args&&... args) const {
         if (!IsLoaded()) {
@@ -965,6 +953,11 @@ public:
         validate(Marshalling::GetError(m_state, lua_pcall(m_state, Helpers::ArgsCount<Args...>(), 0, 0)));
     }
 
+    /// Try to call object as Lua function.
+    /// \tparam Ret Return type of function.
+    /// \tparam Args Arguments types.
+    /// \param args Arguments to pass to Lua function.
+    /// \return Return value of Lua function.
     template <typename Ret, typename... Args>
     std::enable_if_t<!std::is_void_v<Ret>, Ret> Call(Args&&... args) const {
         if (!IsLoaded()) {
@@ -985,6 +978,9 @@ public:
         return {};
     }
 
+    /// Tries to call object as void Lua function.
+    /// \tparam Args Arguments types.
+    /// \param args Arguments to pass to function.
     template <typename... Args>
     void operator()(Args&&... args) const {
         Call<void>(std::forward<Args>(args)...);
@@ -994,6 +990,9 @@ public:
 
     explicit operator bool() const { return IsLoaded(); }
 
+    /// Will save top stack element as ref and pop it, messing with stack.
+    /// \param L Lua stack.
+    /// \return Moon Object.
     static Object CreateAndPop(lua_State* L) { return std::move(Object(L, std::true_type{})); }
 
 private:
@@ -1010,6 +1009,9 @@ private:
         return luaL_ref(m_state, LUA_REGISTRYINDEX);
     }
 
+    /// When optional message is not empty, reports error. To be used with Marshalling error reporting.
+    /// \param message Optional error message. When empty, we assumed there were no errors.
+    /// \return Whether or not errors occurred.
     static bool validate(const std::optional<std::string>& message) {
         if (message.has_value()) {
             if (s_reportError) {
@@ -1020,11 +1022,9 @@ private:
         return true;
     }
 
+    /// Error reporter function. To be defined by wrapper.
     inline static std::function<void(const std::string&)> s_reportError;
-
-    /**
-     * @brief Lua state.
-     */
+    /// Lua state.
     lua_State* m_state{nullptr};
 };
 
@@ -1168,17 +1168,13 @@ private:
 };
 }  // namespace moon
 
-/**
- * @brief Handles all the logic related to "communication" between C++ and Lua, initializing it.
- * Acts as an engine to allow to call C++ functions from Lua and vice-versa, registers
- * and exposes C++ classes to Lua, pops and pushes values to Lua stack, runs file scripts and
- * string scripts.
- */
+/// Handles all the logic related to "communication" between C++ and Lua, initializing it.
+/// Acts as an engine to allow to call C++ functions from Lua and vice-versa, registers
+/// and exposes C++ classes to Lua, pops and pushes values to Lua stack, runs file scripts and
+/// string scripts.
 class Moon {
 public:
-    /**
-     * @brief Initializes Lua state and opens libs.
-     */
+    /// Initializes Lua state and opens libs.
     static void Init() {
         s_state = luaL_newstate();
         luaL_openlibs(s_state);
@@ -1189,54 +1185,42 @@ public:
         moon::Invokable::SetErrorReporter(error);
     }
 
-    /**
-     * @brief Closes Lua state.
-     */
+    /// Closes Lua state.
     static void CloseState() {
         lua_close(s_state);
         s_state = nullptr;
     }
 
-    /**
-     * @brief Set a Lua state, providing pointer.
-     *
-     * @param state State to set.
-     */
+    /// Sets a new Lua state.
+    /// \param state Lua state to set.
     static inline void SetState(lua_State* state) { s_state = state; }
 
-    /**
-     * @brief Set a logger callback to report errors.
-     *
-     * @param logger Callback which is gonna be called every time an error is captured.
-     */
+    /// Set a logger callback.
+    /// \param logger Callback which is gonna be called every time a log occurs.
     static inline void SetLogger(const std::function<void(const std::string&)>& logger) { s_logger = logger; }
 
-    /**
-     * @brief Get the Lua state object.
-     *
-     * @return const lua_State*
-     */
+    /// Getter for Lua state/stack.
+    /// \return Lua state pointer.
     static inline lua_State* GetState() { return s_state; }
 
+    /// Checks if an error is stored. Every time an error occurs it is stored until manual removal.
+    /// \return Whether or not error string is empty.
     static bool HasError() { return !s_error.empty(); }
 
+    /// Getter for the current stored error message.
+    /// \return Error message.
     static const std::string& GetErrorMessage() { return s_error; }
 
+    /// Clears error message and state.
     static void ClearError() { s_error.clear(); }
 
-    /**
-     * @brief Getter for the current top index.
-     *
-     * @return Current lua stack top index.
-     */
+    /// Getter for top index in Lua stack.
+    /// \return Lua stack top index.
     static inline int GetTop() { return lua_gettop(s_state); }
 
-    /**
-     * @brief Checks if provided index is under the limits of Lua stack.
-     *
-     * @param index Index to check.
-     * @return Whether or not the index is valid, inside the current stack elements.
-     */
+    /// Checks if provided index is valid within the range of current Lua stack.
+    /// \param index Index to check.
+    /// \return Whether or not index is valid.
     static bool IsValidIndex(int index) {
         int top = GetTop();
         if (index == 0 || index > top) {
@@ -1248,12 +1232,10 @@ public:
         return true;
     }
 
-    /**
-     * @brief Converts a negative index to a positive one. If already positive, returns it.
-     *
-     * @param index Index to convert.
-     * @return Converted index.
-     */
+    /// Lua stack can be accessed with positive (up de stack) or negative (down the stack) indexes.
+    /// This method converts a negative index to a positive one. Returns original if already positive.
+    /// \param index Index to convert.
+    /// \return Newly converted index.
     static int ConvertNegativeIndex(int index) {
         if (index >= 0) {
             return index;
@@ -1261,9 +1243,8 @@ public:
         return GetTop() + index + 1;
     }
 
-    /**
-     * @brief Returns a string containing all values current in the stack. Useful for debug purposes.
-     */
+    /// Returns current Lua stack as string. Tries to show values when possible or types otherwise.
+    /// \return String containing all current Lua stack elements.
     static std::string GetStackDump() {
         int top = GetTop();
         std::stringstream dump;
@@ -1275,12 +1256,9 @@ public:
         return dump.str();
     }
 
-    /**
-     * @brief String of element in stack value or type (if value can not be printed in C).
-     *
-     * @param index Index of element to get value or type.
-     * @return String containing value of element or type.
-     */
+    /// Prints element at specified index. Shows value when possible or type otherwise.
+    /// \param index Index in stack to print.
+    /// \return String log of element.
     static std::string StackElementToStringDump(int index) {
         if (!IsValidIndex(index)) {
             warning("Tried to print element at invalid index");
@@ -1346,18 +1324,12 @@ public:
         }
     }
 
-    /**
-     * @brief Calls logger with all values current in the stack. Useful for debug purposes.
-     */
+    /// Logs current stack to logger.
     static inline void LogStackDump() { s_logger(GetStackDump()); }
 
-    /**
-     * @brief Loads Lua file script to stack.
-     *
-     * @param filePath Path to file to be loaded.
-     * @return true File loaded successfully.
-     * @return false Failed to load file.
-     */
+    /// Loads specified file script.
+    /// \param filePath File path to load.
+    /// \return Whether or not file was successfully loaded.
     static bool LoadFile(const char* filePath) {
         if (!checkStatus(luaL_loadfile(s_state, filePath), "Error loading file")) {
             return false;
@@ -1365,13 +1337,9 @@ public:
         return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Loading file failed");
     }
 
-    /**
-     * @brief Runs Lua script snippet.
-     *
-     * @param code String to run.
-     * @return true Success running script.
-     * @return false Failed to run script.
-     */
+    /// Runs Lua code snippet.
+    /// \param code Code to run.
+    /// \return Whether or not code ran without errors.
     static bool RunCode(const char* code) {
         if (!checkStatus(luaL_loadstring(s_state, code), "Error running code")) {
             return false;
@@ -1379,21 +1347,15 @@ public:
         return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Running code failed");
     }
 
-    /**
-     * @brief Get the type of value in stack, at position index.
-     *
-     * @param index Position of stack to check.
-     * @return LuaType
-     */
+    /// Get moon type of element at specified index in Lua stack.
+    /// \param index Index to check type.
+    /// \return Moon type of element.
     static moon::LuaType GetType(int index = 1) { return static_cast<moon::LuaType>(lua_type(s_state, index)); }
 
-    /**
-     * @brief Get value from Lua stack.
-     *
-     * @tparam R Value type.
-     * @param index Stack index.
-     * @return R
-     */
+    /// Gets element at specified Lua stack index as C object.
+    /// \tparam R C type to cast Lua object to.
+    /// \param index Index of element in stack.
+    /// \return C object.
     template <typename R>
     static inline R Get(const int index = 1) {
         try {
@@ -1404,13 +1366,10 @@ public:
         return {};
     }
 
-    /**
-     * @brief Get the global variable from Lua.
-     *
-     * @tparam R Type of returned variable.
-     * @param name Name of the variable.
-     * @return R Lua global variable.
-     */
+    /// Gets global Lua variable with specified name as C object.
+    /// \tparam R C object type.
+    /// \param name Lua variable name.
+    /// \return C object.
     template <typename R>
     static inline R Get(const char* name) {
         lua_getglobal(s_state, name);
@@ -1419,69 +1378,50 @@ public:
         return r;
     }
 
-    /**
-     * @brief Ensures that a given LuaMap contains all desired keys. Useful, since maps obtained from lua are dynamic.
-     *
-     * @tparam T LuaMap type.
-     * @param keys Keys to check in map.
-     * @param map Map to check.
-     * @return True if map contains all keys, false otherwise.
-     */
+    /// Ensures that a given LuaMap contains all desired keys. Useful, since maps obtained from lua are dynamic.
+    /// \tparam T LuaMap type.
+    /// \param keys Keys to check in map.
+    /// \param map Map to check.
+    /// \return True if map contains all keys, false otherwise.
     template <typename T>
     static bool EnsureMapKeys(const std::vector<std::string>& keys, const moon::LuaMap<T>& map) {
         return std::all_of(keys.cbegin(), keys.cend(), [&map](const std::string& key) { return map.find(key) != map.cend(); });
     }
 
-    /**
-     * @brief Push value to Lua stack.
-     *
-     * @tparam T Value type.
-     * @param value Value pushed to Lua stack.
-     */
+    /// Push value to Lua stack.
+    /// \tparam T Value type.
+    /// \param value Value pushed to Lua stack.
     template <typename T>
     static void Push(T value) {
         moon::Marshalling::PushValue(s_state, value);
     }
 
-    /**
-     * @brief Push global variable to Lua stack.
-     *
-     * @tparam T Value type.
-     * @param name Variable name.
-     * @param value Value pushed to Lua stack.
-     */
+    /// Push global variable to Lua stack.
+    /// \tparam T Value type.
+    /// \param name Variable name.
+    /// \param value Value pushed to Lua stack.
     template <typename T>
     static void Push(const char* name, T value) {
         Push(value);
         SetGlobalVariable(name);
     }
 
-    /**
-     * @brief Recursive helper method to push multiple values to Lua stack.
-     *
-     * @tparam Args Values types.
-     * @param args Values to push to Lua stack.
-     */
+    /// Recursive helper method to push multiple values to Lua stack.
+    /// \tparam Args Values types.
+    /// \param args Values to push to Lua stack.
     template <typename... Args>
     static void PushValues(Args&&... args) {
         (Push(std::forward<Args>(args)), ...);
     }
 
-    /**
-     * @brief Push a nil (null) value to Lua stack.
-     */
+    /// Push a nil (null) value to Lua stack.
     static void PushNull() { lua_pushnil(s_state); }
 
-    /**
-     * @brief Pushes a new empty table/map to stack.
-     */
+    /// Pushes a new empty table/map to stack.
     static void PushTable() { lua_newtable(s_state); }
 
-    /**
-     * @brief Pops from stack provided nr of elements.
-     *
-     * @param nrOfValues Quantity of elements to pop from stack
-     */
+    /// Tries to pop specified number of elements from stack. Logs an error if top is reached not popping any more.
+    /// \param nrOfElements Number of elements to pop from Lua stack.
     static void Pop(int nrOfElements = 1) {
         while (nrOfElements > 0) {
             if (GetTop() <= 0) {
@@ -1493,24 +1433,18 @@ public:
         }
     }
 
-    /**
-     * @brief Registers and exposes C++ class to Lua.
-     *
-     * @tparam T Class to be registered.
-     * @param nameSpace Class namespace.
-     */
+    /// Registers and exposes C++ class to Lua.
+    /// \tparam T Class to be registered.
+    /// \param nameSpace Class namespace.
     template <class T>
     static void RegisterClass(const char* nameSpace = nullptr) {
         moon::LuaClass<T>::Register(s_state, nameSpace);
     }
 
-    /**
-     * @brief Registers and exposes C++ function to Lua.
-     *
-     * @tparam Func Function type.
-     * @param name Function name to register in Lua.
-     * @param func Function to register.
-     */
+    /// Registers and exposes C++ function to Lua.
+    /// \tparam Func Function type.
+    /// \param name Function name to register in Lua.
+    /// \param func Function to register.
     template <typename Func>
     static void RegisterFunction(const std::string& name, Func&& func) {
         auto deducedFunc = std::function{std::forward<Func>(func)};
@@ -1685,58 +1619,37 @@ public:
         return true;
     }
 
-    /**
-     * @brief Sets top of stack as a global variable.
-     *
-     * @param name Name of the variable to set.
-     */
+    /// Sets top of stack as a global variable.
+    /// \param name Name of the variable to set.
     static void SetGlobalVariable(const char* name) { lua_setglobal(s_state, name); }
 
-    /**
-     * @brief Cleans/nulls a global variable.
-     *
-     * @param name Variable to clean.
-     */
+    /// Cleans/nulls a global variable.
+    /// \param name Variable to clean.
     static void CleanGlobalVariable(const char* name) {
         PushNull();
         SetGlobalVariable(name);
     }
 
+    /// Make moon object directly in Lua stack from C object. Stack is immediately popped, since the reference is stored.
+    /// \tparam T C object type.
+    /// \param value C object.
+    /// \return Newly created moon object.
     template <typename T>
     static moon::Object MakeObject(T&& value) {
         Push(value);
         return std::move(moon::Object::CreateAndPop(s_state));  // Maybe a superfluous move... Can't be bothered.
     }
 
-    /**
-     * @brief Creates and stores a new ref of element at provided index.
-     *
-     * @param index Index of element to create ref. Defaults to top of stack.
-     * @return A new LuaRef.
-     */
+    /// Creates and stores a new ref of element at provided index.
+    /// \param index Index of element to create ref. Defaults to top of stack.
+    /// \return A new moon Object.
     static moon::Object MakeObjectFromIndex(int index = -1) { return {s_state, index}; }
 
 private:
-    /**
-     * @brief Lua state with static storage.
-     */
-    inline static lua_State* s_state{nullptr};
-
-    /**
-     * @brief Logger callback to be defined by client.
-     */
-    inline static std::function<void(const std::string&)> s_logger;
-
-    inline static std::string s_error;
-
-    /**
-     * @brief Checks for lua status and returns if ok or not.
-     *
-     * @param status Status code obtained from lua function
-     * @param errMessage Default error message to print if none is obtained from lua stack
-     * @return true Lua ok
-     * @return false Something failed
-     */
+    /// Checks for lua status and returns if ok or not.
+    /// \param status Status code obtained from lua function.
+    /// \param errMessage Default error message to print if none is obtained from lua stack.
+    /// \return Whether or not no error occurred.
     static bool checkStatus(int status, const char* errMessage = "") {
         if (status != LUA_OK) {
             const auto* msg = Get<const char*>(-1);
@@ -1747,12 +1660,21 @@ private:
         return true;
     }
 
+    /// Logs a warning message.
     static void warning(const std::string& message) { s_logger("Moon :: WARNING: " + message); }
 
+    /// Logs and stores an error message.
     static void error(const std::string& message) {
         s_error = message;
         s_logger("Moon :: ERROR: " + message);
     }
+
+    /// Lua state with static storage.
+    inline static lua_State* s_state{nullptr};
+    /// Logger callback to be defined by client.
+    inline static std::function<void(const std::string&)> s_logger;
+    /// Global error message. This is filled every time an error occurs, whether directly or by reporters. Must be manually removed.
+    inline static std::string s_error;
 };
 
 #endif
