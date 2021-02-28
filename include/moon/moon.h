@@ -464,103 +464,105 @@ private:
     bool m_gc{true};
 };
 
+namespace detail {
 template <typename T, typename Ret = T>
-using IsBool = std::enable_if_t<std::is_same_v<T, bool>, Ret>;
+using is_bool = std::enable_if_t<std::is_same_v<T, bool>, Ret>;
+
 template <typename T, typename Ret = T>
-using IsIntegral = std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, Ret>;
+using is_integral = std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, Ret>;
+
 template <typename T, typename Ret = T>
-using IsFloatingPoint = std::enable_if_t<std::is_floating_point_v<T>, Ret>;
+using is_floating_point = std::enable_if_t<std::is_floating_point_v<T>, Ret>;
+
 template <typename T, typename Ret = T>
-using IsString = std::enable_if_t<std::is_same_v<T, std::string>, Ret>;
+using is_string = std::enable_if_t<std::is_same_v<T, std::string>, Ret>;
+
 template <typename T, typename Ret = T>
-using IsCString = std::enable_if_t<std::is_same_v<T, const char*>, Ret>;
+using is_c_string = std::enable_if_t<std::is_same_v<T, const char*>, Ret>;
+
 template <typename T, typename Ret = T>
-using IsLuaRef = std::enable_if_t<std::is_base_of_v<Reference, T>, Ret>;
+using is_reference = std::enable_if_t<std::is_base_of_v<Reference, T>, Ret>;
+
 template <typename T, typename Ret = T>
-using IsPointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
+using is_pointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
+
 template <typename T>
-struct Vector : std::false_type {};
+struct vector : std::false_type {};
+
 template <typename T>
-struct Vector<std::vector<T>> : std::true_type {};
+struct vector<std::vector<T>> : std::true_type {};
+
 template <typename T, typename Ret = T>
-using IsVector = std::enable_if_t<Vector<T>::value, Ret>;
+using is_vector = std::enable_if_t<vector<T>::value, Ret>;
+
 template <typename T>
-struct Map : std::false_type {};
+struct map : std::false_type {};
+
 template <typename T>
-struct Map<LuaMap<T>> : std::true_type {};
+struct map<LuaMap<T>> : std::true_type {};
+
 template <typename T>
-struct Map<std::map<std::string, T>> : std::true_type {};
+struct map<std::map<std::string, T>> : std::true_type {};
+
 template <typename T, typename Ret = T>
-using IsMap = std::enable_if_t<Map<T>::value, Ret>;
+using is_map = std::enable_if_t<map<T>::value, Ret>;
+
 template <typename T, typename Ret = T>
-using IsBinding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, Ret>;
+using is_binding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, Ret>;
+
 template <typename T>
-struct Function : std::false_type {};
+struct function : std::false_type {};
+
 template <typename T>
-struct Function<std::function<T>> : std::true_type {};
+struct function<std::function<T>> : std::true_type {};
+
 template <typename T, typename Ret = T>
-using IsFunction = std::enable_if_t<Function<T>::value, Ret>;
+using is_function = std::enable_if_t<function<T>::value, Ret>;
+
 template <typename>
-struct Tuple : std::false_type {};
-template <typename... T>
-struct Tuple<std::tuple<T...>> : std::true_type {};
-template <typename T, typename Ret = T>
-using IsTuple = std::enable_if_t<Tuple<T>::value, Ret>;
-
-/// Internal static helper methods.
-class Helpers {
-public:
-    /// Lua function argument count per C++ args pack
-    /// \tparam Args C++ arguments types.
-    /// \return Number of arguments to call Lua function.
-    template <typename... Args>
-    static size_t ArgsCount() {
-        return sum(ResultsCount<Args>()...);
-    }
-
-    /// Lua function return results count per C++ type.
-    /// Count when using tuple is the same of tuple size.
-    /// \tparam T C++ type to check.
-    /// \return Number of return results of Lua function.
-    template <typename T>
-    static std::enable_if_t<Tuple<T>::value, size_t> ResultsCount() {
-        return std::tuple_size_v<T>;
-    }
-
-    /// Lua function return results count per C++ type.
-    /// Count when using other types than tuple is 1.
-    /// \tparam T C++ type to check.
-    /// \return Number of return results of Lua function.
-    template <typename T>
-    static std::enable_if_t<!Tuple<T>::value, size_t> ResultsCount() {
-        return 1;
-    }
-
-private:
-    /// Sum of all arguments. Useful for number of arguments count per type.
-    /// \return Sum of all arguments.
-    static size_t sum() { return 0; }
-
-    /// Sum of all arguments. Useful for number of arguments count per type.
-    /// \tparam T Argument type
-    /// \param first Element to sum.
-    /// \return Sum of all arguments.
-    template <typename T>
-    static size_t sum(T&& first) {
-        return first;
-    }
-
-    /// Sum of all arguments. Useful for number of arguments count per type.
-    /// \tparam T Argument type.
-    /// \tparam Args Rest of arguments types.
-    /// \param first Element to sum.
-    /// \param rest Rest of elements to sum.
-    /// \return Sum of all arguments.
-    template <typename T, typename... Args>
-    static size_t sum(T&& first, Args&&... rest) {
-        return first + sum(rest...);
-    }
+struct tuple : std::false_type {
+    /// Counts types contained in tuple. 1 when non tuple.
+    static const size_t type_count{1};
 };
+
+template <typename... T>
+struct tuple<std::tuple<T...>> : std::true_type {
+    /// Counts types contained in tuple. Tuple size when tuple.
+    static const size_t type_count{std::tuple_size_v<std::tuple<T...>>};
+};
+
+template <typename T, typename Ret = T>
+using is_tuple = std::enable_if_t<tuple<T>::value, Ret>;
+
+template <typename T, T... elements>
+struct sum {
+    static const T value{static_cast<T>(0)};  // 0 if no elements
+};
+
+template <typename T, T element, T... rest>
+struct sum<T, element, rest...> {
+    static const T value{element + sum<T, rest...>::value};
+};
+
+template <typename T, T... elements>
+constexpr T sum_v = sum<T, elements...>::value;
+
+template <typename... Ts>
+struct lua_call_count {
+    static const size_t value{tuple<Ts...>::type_count};
+};
+
+/// Counts number of results or arguments expected to be passed/retrieved from Lua call of function.
+/// This number will vary depending if we're coupling types in tuples or not. With this method, we ensure always a valid count for user specified
+/// types.
+/// \example
+/// \code Call<int, std::tuple<bool, size_t>, std::string>(std::tuple<int, int>, int)
+/// \endcode
+/// will result in 4 returns expected and 3 arguments expected.
+/// \tparam Ts Types to count from.
+template <typename... Ts>
+constexpr size_t count_expected_v = sum_v<size_t, lua_call_count<Ts>::value...>;
+}  // namespace detail
 
 template <typename T>
 struct STLFunctionSpread;
@@ -579,75 +581,75 @@ public:
     }
 
     template <typename R>
-    static IsBool<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_bool<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isboolean(L, index);
     }
 
     template <typename R>
-    static IsIntegral<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_integral<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isinteger(L, index);
     }
 
     template <typename R>
-    static IsFloatingPoint<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_floating_point<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isnumber(L, index) && !lua_isinteger(L, index);
     }
 
     template <typename R>
-    static IsString<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_string<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isstring(L, index);
     }
 
     template <typename R>
-    static IsCString<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_c_string<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isstring(L, index);
     }
 
     template <typename R>
-    static IsPointer<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_pointer<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isuserdata(L, index);
     }
 
     template <typename R>
-    static IsBinding<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_binding<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isuserdata(L, index);
     }
 
     template <typename R>
-    static IsVector<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_vector<R, bool> CheckValue(lua_State* L, int index) {
         return lua_istable(L, index);
     }
 
     template <typename R>
-    static IsMap<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_map<R, bool> CheckValue(lua_State* L, int index) {
         return lua_istable(L, index);
     }
 
     template <typename R>
-    static IsFunction<R, bool> CheckValue(lua_State* L, int index) {
+    static detail::is_function<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isfunction(L, index);
     }
 
     template <typename R>
-    static IsBool<R> GetValue(lua_State* L, int index) {
+    static detail::is_bool<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "boolean");
         return lua_toboolean(L, index) != 0;
     }
 
     template <typename R>
-    static IsIntegral<R> GetValue(lua_State* L, int index) {
+    static detail::is_integral<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "integer");
         return static_cast<R>(lua_tointeger(L, index));
     }
 
     template <typename R>
-    static IsFloatingPoint<R> GetValue(lua_State* L, int index) {
+    static detail::is_floating_point<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "number");
         return static_cast<R>(lua_tonumber(L, index));
     }
 
     template <typename R>
-    static IsString<R> GetValue(lua_State* L, int index) {
+    static detail::is_string<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "string");
         size_t size;
         const char* buffer = lua_tolstring(L, index, &size);
@@ -655,30 +657,30 @@ public:
     }
 
     template <typename R>
-    static IsCString<R> GetValue(lua_State* L, int index) {
+    static detail::is_c_string<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "string");
         return lua_tostring(L, index);
     }
 
     template <typename R>
-    static IsLuaRef<R> GetValue(lua_State* L, int index) {
+    static detail::is_reference<R> GetValue(lua_State* L, int index) {
         return {L, index};
     }
 
     template <typename R>
-    static IsPointer<R> GetValue(lua_State* L, int index) {
+    static detail::is_pointer<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "userdata");
         return *static_cast<R*>(lua_touserdata(L, index));
     }
 
     template <typename R>
-    static IsBinding<R> GetValue(lua_State* L, int index) {
+    static detail::is_binding<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "userdata");
         return *GetValue<R*>(L, index);
     }
 
     template <typename R>
-    static IsVector<R> GetValue(lua_State* L, int index) {
+    static detail::is_vector<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "table");
         ensurePositiveIndex(index, L);
         auto size = (size_t)lua_rawlen(L, index);
@@ -698,7 +700,7 @@ public:
     }
 
     template <typename R>
-    static IsMap<R> GetValue(lua_State* L, int index) {
+    static detail::is_map<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "table");
         ensurePositiveIndex(index, L);
         lua_pushnil(L);
@@ -711,29 +713,29 @@ public:
     }
 
     template <typename R>
-    static IsFunction<R> GetValue(lua_State* L, int index) {
+    static detail::is_function<R> GetValue(lua_State* L, int index) {
         assert_lua_type(CheckValue<R>(L, index), "function");
         return STLFunctionSpread<R>::GetFunctor(L, index);
     }
 
     template <typename R>
-    static IsTuple<R> GetValue(lua_State* L, int index) {
+    static detail::is_tuple<R> GetValue(lua_State* L, int index) {
         ensurePositiveIndex(index, L);
         return STLTupleSpread<R>::GetTuple(L, index);
     }
 
     template <typename T>
-    static IsBool<T, void> PushValue(lua_State* L, T value) {
+    static detail::is_bool<T, void> PushValue(lua_State* L, T value) {
         lua_pushboolean(L, value);
     }
 
     template <typename T>
-    static IsIntegral<T, void> PushValue(lua_State* L, T value) {
+    static detail::is_integral<T, void> PushValue(lua_State* L, T value) {
         lua_pushinteger(L, value);
     }
 
     template <typename T>
-    static IsFloatingPoint<T, void> PushValue(lua_State* L, T value) {
+    static detail::is_floating_point<T, void> PushValue(lua_State* L, T value) {
         lua_pushnumber(L, value);
     }
 
@@ -780,7 +782,7 @@ public:
     }
 
     template <typename T>
-    static IsBinding<T, void> PushValue(lua_State* L, T* value) {
+    static detail::is_binding<T, void> PushValue(lua_State* L, T* value) {
         auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
         *a = value;
         luaL_getmetatable(L, T::Binding.GetName());
@@ -788,7 +790,7 @@ public:
     }
 
     template <typename T>
-    static IsTuple<T, void> PushValue(lua_State* L, T value) {
+    static detail::is_tuple<T, void> PushValue(lua_State* L, T value) {
         STLTupleSpread<T>::PushTuple(L, value);
     }
 
@@ -950,7 +952,7 @@ public:
         }
         Push();
         Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-        validate(Marshalling::GetError(m_state, lua_pcall(m_state, Helpers::ArgsCount<Args...>(), 0, 0)));
+        validate(Marshalling::GetError(m_state, lua_pcall(m_state, detail::count_expected_v<Args...>, 0, 0)));
     }
 
     /// Try to call object as Lua function.
@@ -966,10 +968,10 @@ public:
         }
         Push();
         Marshalling::PushValues(m_state, std::forward<Args>(args)...);
-        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, Helpers::ArgsCount<Args...>(), Helpers::ResultsCount<Ret>(), 0)))) {
+        if (!validate(Marshalling::GetError(m_state, lua_pcall(m_state, detail::count_expected_v<Args...>, detail::count_expected_v<Ret>, 0)))) {
             return {};
         }
-        PopGuard guard{m_state, (int)Helpers::ResultsCount<Ret>()};
+        PopGuard guard{m_state, detail::count_expected_v<Ret>};
         try {
             return std::move(Marshalling::GetValue<Ret>(m_state, -1));
         } catch (const std::exception& e) {

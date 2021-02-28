@@ -3,17 +3,36 @@
 #include "moon/moon.h"
 #include "stackguard.h"
 
-TEST_CASE("reference type", "[basic]") {
+SCENARIO("moon object reference base class", "[basic][reference]") {
     Moon::Init();
-    int topRefIndex = (int)lua_rawlen(Moon::GetState(), LUA_REGISTRYINDEX);
+    BEGIN_STACK_GUARD
 
-    moon::Reference ref;
-    Moon::Push(20);
-    moon::Reference ref2(Moon::GetState());
-    ref = std::move(ref2);
-    REQUIRE(ref.IsLoaded());
-    REQUIRE(ref.GetKey() == topRefIndex + 1);
+    GIVEN("an empty Lua stack and an unloaded reference") {
+        REQUIRE(Moon::GetTop() == 0);
+        moon::Reference ref;
+        REQUIRE_FALSE(ref.IsLoaded());
 
+        WHEN("a value is pushed to Lua and a new reference is created from top index") {
+            int topRefIndex = (int)lua_rawlen(Moon::GetState(), LUA_REGISTRYINDEX);
+            Moon::Push(20);
+            moon::PopGuard popGuard{Moon::GetState()};
+            moon::Reference ref2(Moon::GetState());
+            int key = ref2.GetKey();
+
+            THEN("new reference must be loaded") { REQUIRE(ref2.IsLoaded()); }
+
+            AND_THEN("new reference key should be one more than previous top ref index") { REQUIRE(key == topRefIndex + 1); }
+
+            AND_THEN("we can move new reference to old one") {
+                ref = std::move(ref2);
+                REQUIRE(ref.IsLoaded());
+                REQUIRE(ref.GetKey() == key);
+            }
+        }
+    }
+
+    END_STACK_GUARD
+    REQUIRE_FALSE(Moon::HasError());
     Moon::CloseState();
 }
 
@@ -205,7 +224,25 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
     GIVEN("an empty lua stack") {
         REQUIRE(Moon::GetTop() == 0);
 
-        WHEN("integrals are created directly in lua stack") {
+        WHEN("an object is created without args") {
+            moon::Object obj;
+
+            THEN("object should not be loaded") {
+                REQUIRE_FALSE(obj.IsLoaded());
+                REQUIRE(obj.GetState() == nullptr);
+            }
+
+            AND_THEN("object type should be null") { REQUIRE(obj.GetType() == moon::LuaType::Null); }
+
+            AND_THEN("object should not match any C type") {
+                REQUIRE_FALSE(obj.Is<int>());
+                REQUIRE_FALSE(obj.Is<float>());
+                REQUIRE_FALSE(obj.Is<std::string>());
+                REQUIRE_FALSE(obj.Is<void*>());
+            }
+        }
+
+        AND_WHEN("integrals are created directly in lua stack") {
             int a = 1;
             unsigned b = 1;
             uint16_t c = 1;
@@ -319,10 +356,13 @@ SCENARIO("callable objects", "[object][functions][basic]") {
         REQUIRE(Moon::RunCode("test = 'failed'; return function() test = 'passed' end"));
         REQUIRE(Moon::RunCode("test = 'failed'; return function(a) test = a end"));
         REQUIRE(Moon::RunCode("return function(a, b, c) return a == 'passed' and b and c == 1 end"));
+        REQUIRE(Moon::RunCode("return function(a, b, c) return a, b, c end"));
 
         WHEN("we try to create some callable objects") {
+            moon::PopGuard pop{Moon::GetState(), 5};
+
             std::vector<moon::Object> functions = {Moon::MakeObjectFromIndex(1), Moon::MakeObjectFromIndex(2), Moon::MakeObjectFromIndex(3),
-                                                   Moon::MakeObjectFromIndex(4)};
+                                                   Moon::MakeObjectFromIndex(4), Moon::MakeObjectFromIndex(5)};
 
             THEN("objects should be loaded") {
                 for (const auto& f : functions) {
@@ -347,6 +387,10 @@ SCENARIO("callable objects", "[object][functions][basic]") {
                 REQUIRE(functions[3].Call<bool>("passed", true, 1));
             }
 
+            AND_THEN("multiple values can be returned in call") {
+                REQUIRE(std::get<1>(functions[4].Call<std::tuple<std::string, bool, int>>("passed", true, 1)));
+            }
+
             AND_THEN("objects can be called with () operator") {
                 functions[1]();
                 REQUIRE(Moon::Get<std::string>("test") == "passed");
@@ -362,7 +406,6 @@ SCENARIO("callable objects", "[object][functions][basic]") {
             }
         }
 
-        Moon::Pop(4);
         CHECK_STACK_GUARD
     }
 
