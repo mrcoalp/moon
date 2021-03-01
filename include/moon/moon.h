@@ -43,6 +43,124 @@
 #define MOON_ADD_PROPERTY_CUSTOM(_prop, _getter, _setter) .AddProperty({#_prop, &BindingType::_getter, &BindingType::_setter})
 
 namespace moon {
+namespace meta {
+template <typename T, typename Ret = T>
+using is_bool_t = std::enable_if_t<std::is_same_v<T, bool>, Ret>;
+
+template <typename T, typename Ret = T>
+using is_integral_t = std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, Ret>;
+
+template <typename T, typename Ret = T>
+using is_floating_point_t = std::enable_if_t<std::is_floating_point_v<T>, Ret>;
+
+template <typename T, typename Ret = T>
+using is_string_t = std::enable_if_t<std::is_same_v<T, std::string>, Ret>;
+
+template <typename T, typename Ret = T>
+using is_c_string_t = std::enable_if_t<std::is_same_v<T, const char*>, Ret>;
+
+template <typename T, typename Ret = T>
+using is_pointer_t = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
+
+namespace meta_detail {
+template <typename T>
+struct vector : std::false_type {};
+
+template <typename T>
+struct vector<std::vector<T>> : std::true_type {};
+}  // namespace meta_detail
+
+template <typename T, typename Ret = T>
+using is_vector_t = std::enable_if_t<meta_detail::vector<T>::value, Ret>;
+
+namespace meta_detail {
+template <typename T>
+struct map : std::false_type {};
+
+template <typename T>
+struct map<std::unordered_map<std::string, T>> : std::true_type {};
+
+template <typename T>
+struct map<std::map<std::string, T>> : std::true_type {};
+}  // namespace meta_detail
+
+template <typename T, typename Ret = T>
+using is_map_t = std::enable_if_t<meta_detail::map<T>::value, Ret>;
+
+namespace meta_detail {
+template <typename T>
+struct function : std::false_type {};
+
+template <typename T>
+struct function<std::function<T>> : std::true_type {};
+}  // namespace meta_detail
+
+template <typename T, typename Ret = T>
+using is_function_t = std::enable_if_t<meta_detail::function<T>::value, Ret>;
+
+namespace meta_detail {
+template <typename>
+struct tuple : std::false_type {
+    /// Counts types contained in tuple. 1 when non tuple.
+    static const size_t type_count{1};
+};
+
+template <typename... T>
+struct tuple<std::tuple<T...>> : std::true_type {
+    /// Counts types contained in tuple. Tuple size when tuple.
+    static const size_t type_count{std::tuple_size_v<std::tuple<T...>>};
+};
+}  // namespace meta_detail
+
+template <typename T, typename Ret = T>
+using is_tuple_t = std::enable_if_t<meta_detail::tuple<T>::value, Ret>;
+
+template <typename T, typename... Ts>
+constexpr bool none_is_v = !std::disjunction_v<std::is_same<T, Ts>...>;
+
+template <typename T, typename... Ts>
+constexpr bool all_are_v = std::conjunction_v<std::is_same<T, Ts>...>;
+
+template <size_t size, typename... Ts>
+constexpr bool sizeof_is_v = size == sizeof...(Ts);
+
+template <typename... Ts>
+using multi_ret_t = std::conditional_t<sizeof_is_v<1, Ts...>, std::tuple_element_t<0, std::tuple<Ts...>>, std::tuple<Ts...>>;
+
+namespace meta_detail {
+template <typename T, T... elements>
+struct sum {
+    static const T value{static_cast<T>(0)};  // 0 if no elements
+};
+
+template <typename T, T element, T... rest>
+struct sum<T, element, rest...> {
+    static const T value{element + sum<T, rest...>::value};
+};
+}  // namespace meta_detail
+
+template <typename T, T... elements>
+constexpr T sum_v = meta_detail::sum<T, elements...>::value;
+
+namespace meta_detail {
+template <typename... Ts>
+struct lua_call_count_arg_ret {
+    static const size_t value{tuple<Ts...>::type_count};
+};
+}  // namespace meta_detail
+
+/// Counts number of results or arguments expected to be passed/retrieved from Lua call of function.
+/// This number will vary depending if we're coupling types in tuples or not. With this method, we ensure always a valid count for user specified
+/// types.
+/// \example
+/// \code Call<int, std::tuple<bool, size_t>, std::string>(std::tuple<int, int>, int)
+/// \endcode
+/// will result in 4 returns expected and 3 arguments expected.
+/// \tparam Ts Types to count from.
+template <typename... Ts>
+constexpr size_t count_expected_v = sum_v<size_t, meta_detail::lua_call_count_arg_ret<Ts>::value...>;
+}  // namespace meta
+
 constexpr const char* LUA_INVOKABLE_HOLDER_META_NAME{"LuaInvokableHolder"};
 
 using LuaCFunction = int (*)(lua_State*);
@@ -132,6 +250,11 @@ protected:
     /// Reference identifier.
     int m_key{LUA_NOREF};
 };
+
+namespace meta {
+template <typename T, typename Ret = T>
+using is_reference_t = std::enable_if_t<std::is_base_of_v<Reference, T>, Ret>;
+}
 
 /**
  * @brief Converts C++ class to Lua metatable.
@@ -464,117 +587,10 @@ private:
     bool m_gc{true};
 };
 
-namespace detail {
+namespace meta {
 template <typename T, typename Ret = T>
-using is_bool = std::enable_if_t<std::is_same_v<T, bool>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_integral = std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_floating_point = std::enable_if_t<std::is_floating_point_v<T>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_string = std::enable_if_t<std::is_same_v<T, std::string>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_c_string = std::enable_if_t<std::is_same_v<T, const char*>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_reference = std::enable_if_t<std::is_base_of_v<Reference, T>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_pointer = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
-
-template <typename T>
-struct vector : std::false_type {};
-
-template <typename T>
-struct vector<std::vector<T>> : std::true_type {};
-
-template <typename T, typename Ret = T>
-using is_vector = std::enable_if_t<vector<T>::value, Ret>;
-
-template <typename T>
-struct map : std::false_type {};
-
-template <typename T>
-struct map<LuaMap<T>> : std::true_type {};
-
-template <typename T>
-struct map<std::map<std::string, T>> : std::true_type {};
-
-template <typename T, typename Ret = T>
-using is_map = std::enable_if_t<map<T>::value, Ret>;
-
-template <typename T, typename Ret = T>
-using is_binding = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, Ret>;
-
-template <typename T>
-struct function : std::false_type {};
-
-template <typename T>
-struct function<std::function<T>> : std::true_type {};
-
-template <typename T, typename Ret = T>
-using is_function = std::enable_if_t<function<T>::value, Ret>;
-
-template <typename>
-struct tuple : std::false_type {
-    /// Counts types contained in tuple. 1 when non tuple.
-    static const size_t type_count{1};
-};
-
-template <typename... T>
-struct tuple<std::tuple<T...>> : std::true_type {
-    /// Counts types contained in tuple. Tuple size when tuple.
-    static const size_t type_count{std::tuple_size_v<std::tuple<T...>>};
-};
-
-template <typename T, typename Ret = T>
-using is_tuple = std::enable_if_t<tuple<T>::value, Ret>;
-
-template <typename T, typename... Ts>
-constexpr bool none_is_v = !std::disjunction_v<std::is_same<T, Ts>...>;
-
-template <typename T, typename... Ts>
-constexpr bool all_are_v = std::conjunction_v<std::is_same<T, Ts>...>;
-
-template <size_t size, typename... Ts>
-constexpr bool sizeof_is_v = size == sizeof...(Ts);
-
-template <typename... Ts>
-using multi_ret_t = std::conditional_t<sizeof_is_v<1, Ts...>, std::tuple_element_t<0, std::tuple<Ts...>>, std::tuple<Ts...>>;
-
-template <typename T, T... elements>
-struct sum {
-    static const T value{static_cast<T>(0)};  // 0 if no elements
-};
-
-template <typename T, T element, T... rest>
-struct sum<T, element, rest...> {
-    static const T value{element + sum<T, rest...>::value};
-};
-
-template <typename T, T... elements>
-constexpr T sum_v = sum<T, elements...>::value;
-
-template <typename... Ts>
-struct lua_call_count {
-    static const size_t value{tuple<Ts...>::type_count};
-};
-
-/// Counts number of results or arguments expected to be passed/retrieved from Lua call of function.
-/// This number will vary depending if we're coupling types in tuples or not. With this method, we ensure always a valid count for user specified
-/// types.
-/// \example
-/// \code Call<int, std::tuple<bool, size_t>, std::string>(std::tuple<int, int>, int)
-/// \endcode
-/// will result in 4 returns expected and 3 arguments expected.
-/// \tparam Ts Types to count from.
-template <typename... Ts>
-constexpr size_t count_expected_v = sum_v<size_t, lua_call_count<Ts>::value...>;
-}  // namespace detail
+using is_binding_t = std::enable_if_t<std::is_same_v<decltype(T::Binding), Binding<T>>, Ret>;
+}
 
 template <typename T>
 struct STLFunctionSpread;
@@ -588,75 +604,75 @@ public:
     }
 
     template <typename R>
-    static detail::is_bool<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_bool_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isboolean(L, index);
     }
 
     template <typename R>
-    static detail::is_integral<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_integral_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isinteger(L, index);
     }
 
     template <typename R>
-    static detail::is_floating_point<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_floating_point_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isnumber(L, index) && !lua_isinteger(L, index);
     }
 
     template <typename R>
-    static detail::is_string<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_string_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isstring(L, index);
     }
 
     template <typename R>
-    static detail::is_c_string<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_c_string_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isstring(L, index);
     }
 
     template <typename R>
-    static detail::is_pointer<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_pointer_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isuserdata(L, index);
     }
 
     template <typename R>
-    static detail::is_binding<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_binding_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isuserdata(L, index);
     }
 
     template <typename R>
-    static detail::is_vector<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_vector_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_istable(L, index);
     }
 
     template <typename R>
-    static detail::is_map<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_map_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_istable(L, index);
     }
 
     template <typename R>
-    static detail::is_function<R, bool> CheckValue(lua_State* L, int index) {
+    static meta::is_function_t<R, bool> CheckValue(lua_State* L, int index) {
         return lua_isfunction(L, index);
     }
 
     template <typename R>
-    static detail::is_bool<R> GetValue(lua_State* L, int index) {
+    static meta::is_bool_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: boolean");
         return lua_toboolean(L, index) != 0;
     }
 
     template <typename R>
-    static detail::is_integral<R> GetValue(lua_State* L, int index) {
+    static meta::is_integral_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: integer");
         return static_cast<R>(lua_tointeger(L, index));
     }
 
     template <typename R>
-    static detail::is_floating_point<R> GetValue(lua_State* L, int index) {
+    static meta::is_floating_point_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: number");
         return static_cast<R>(lua_tonumber(L, index));
     }
 
     template <typename R>
-    static detail::is_string<R> GetValue(lua_State* L, int index) {
+    static meta::is_string_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: string");
         size_t size;
         const char* buffer = lua_tolstring(L, index, &size);
@@ -664,30 +680,30 @@ public:
     }
 
     template <typename R>
-    static detail::is_c_string<R> GetValue(lua_State* L, int index) {
+    static meta::is_c_string_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: string");
         return lua_tostring(L, index);
     }
 
     template <typename R>
-    static detail::is_reference<R> GetValue(lua_State* L, int index) {
+    static meta::is_reference_t<R> GetValue(lua_State* L, int index) {
         return {L, index};
     }
 
     template <typename R>
-    static detail::is_pointer<R> GetValue(lua_State* L, int index) {
+    static meta::is_pointer_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: userdata");
         return *static_cast<R*>(lua_touserdata(L, index));
     }
 
     template <typename R>
-    static detail::is_binding<R> GetValue(lua_State* L, int index) {
+    static meta::is_binding_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: userdata");
         return *GetValue<R*>(L, index);
     }
 
     template <typename R>
-    static detail::is_vector<R> GetValue(lua_State* L, int index) {
+    static meta::is_vector_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: table");
         ensurePositiveIndex(index, L);
         auto size = (size_t)lua_rawlen(L, index);
@@ -707,7 +723,7 @@ public:
     }
 
     template <typename R>
-    static detail::is_map<R> GetValue(lua_State* L, int index) {
+    static meta::is_map_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: table");
         ensurePositiveIndex(index, L);
         lua_pushnil(L);
@@ -720,30 +736,30 @@ public:
     }
 
     template <typename R>
-    static detail::is_function<R> GetValue(lua_State* L, int index) {
+    static meta::is_function_t<R> GetValue(lua_State* L, int index) {
         runtime_assert(CheckValue<R>(L, index), "Lua type check failed: function");
         return STLFunctionSpread<R>::GetFunctor(L, index);
     }
 
     template <typename R>
-    static detail::is_tuple<R> GetValue(lua_State* L, int index) {
+    static meta::is_tuple_t<R> GetValue(lua_State* L, int index) {
         ensurePositiveIndex(index, L);
         constexpr size_t elements = std::tuple_size_v<R>;
         return getTupleHelper<R>(std::make_index_sequence<elements>{}, L, index - elements + 1);
     }
 
     template <typename T>
-    static detail::is_bool<T, void> PushValue(lua_State* L, T value) {
+    static meta::is_bool_t<T, void> PushValue(lua_State* L, T value) {
         lua_pushboolean(L, value);
     }
 
     template <typename T>
-    static detail::is_integral<T, void> PushValue(lua_State* L, T value) {
+    static meta::is_integral_t<T, void> PushValue(lua_State* L, T value) {
         lua_pushinteger(L, value);
     }
 
     template <typename T>
-    static detail::is_floating_point<T, void> PushValue(lua_State* L, T value) {
+    static meta::is_floating_point_t<T, void> PushValue(lua_State* L, T value) {
         lua_pushnumber(L, value);
     }
 
@@ -790,7 +806,7 @@ public:
     }
 
     template <typename T>
-    static detail::is_binding<T, void> PushValue(lua_State* L, T* value) {
+    static meta::is_binding_t<T, void> PushValue(lua_State* L, T* value) {
         auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
         *a = value;
         luaL_getmetatable(L, T::Binding.GetName());
@@ -798,7 +814,7 @@ public:
     }
 
     template <typename T>
-    static detail::is_tuple<T, void> PushValue(lua_State* L, T&& value) {
+    static meta::is_tuple_t<T, void> PushValue(lua_State* L, T&& value) {
         pushTupleHelper(std::make_index_sequence<std::tuple_size_v<T>>{}, L, std::forward<T>(value));
     }
 
@@ -851,8 +867,7 @@ private:
     }
 };
 
-class Stack {
-public:
+struct Stack {
     /// Pops specified elements from lua stack when destroyed.
     class PopGuard {
     public:
@@ -871,53 +886,70 @@ public:
         int m_elements{1};
     };
 
+    /// Requires single return type and that that type is void.
     template <typename... Rs>
-    static detail::multi_ret_t<Rs...> Get(lua_State* L, int index, const std::function<void(const std::string&)>& reporter) {
-        if constexpr (sizeof...(Rs) < 2) {
-            try {
-                return Marshalling::GetValue<std::tuple_element_t<0, std::tuple<Rs...>>>(L, index);
-            } catch (const std::exception& e) {
-                reporter(e.what());
-            }
-            return {};
-        } else {
-            try {
-                return Marshalling::GetValue<std::tuple<Rs...>>(L, index);
-            } catch (const std::exception& e) {
-                reporter(e.what());
-            }
-            return {};
+    using call_void_t = std::enable_if_t<meta::sizeof_is_v<1, Rs...> && meta::all_are_v<void, Rs...>, void>;
+
+    /// One or more non void return types. With multiple return types, convert type to tuple.
+    template <typename... Rs>
+    using call_return_t = std::enable_if_t<meta::none_is_v<void, Rs...>, meta::multi_ret_t<Rs...>>;
+
+    /// Reports message to specified reporter and returns void.
+    /// \tparam Rs Return types.
+    /// \param reporter Reporter function.
+    /// \param message Message to report.
+    /// \return Void.
+    template <typename... Rs>
+    static call_void_t<Rs...> ReportErrorWithReturn(const std::function<void(const std::string&)>& reporter, std::string&& message) {
+        reporter(std::forward<std::string>(message));
+    }
+
+    /// Reports message to specified reporter and returns default constructed return type.
+    /// \tparam Rs Return types.
+    /// \param reporter Reporter function.
+    /// \param message Message to report.
+    /// \return Default constructed return type.
+    template <typename... Rs>
+    static call_return_t<Rs...> ReportErrorWithReturn(const std::function<void(const std::string&)>& reporter, std::string&& message) {
+        reporter(std::forward<std::string>(message));
+        return {};
+    }
+
+    /// Tries to get value from stack at specified index as C type. When failing returns default constructed type.
+    /// \tparam Rs Return types. Can be converted to tuple if multiple.
+    /// \param L Lua stack.
+    /// \param index Element index in stack.
+    /// \param reporter Error reporter function.
+    /// \return Value or default constructed type.
+    template <typename... Rs>
+    static decltype(auto) Get(lua_State* L, int index, const std::function<void(const std::string&)>& reporter) {
+        try {
+            return Marshalling::GetValue<meta::multi_ret_t<Rs...>>(L, index);
+        } catch (const std::exception& e) {
+            return ReportErrorWithReturn<Rs...>(reporter, e.what());
         }
     }
 
+    /// Pushes values to Lua stack.
+    /// \tparam Ts Values types.
+    /// \param L Lua stack.
+    /// \param values Values to push to stack.
     template <typename... Ts>
     static void Push(lua_State* L, Ts&&... values) {
         (Marshalling::PushValue(L, std::forward<Ts>(values)), ...);
     }
 
+    /// Pushes new userdata (pointer) to Lua stack.
+    /// \tparam T User data type.
+    /// \param L Lua stack.
+    /// \param value Userdata to push.
+    /// \param metatable Metatable to set userdata as.
     template <typename T>
     static void PushUserData(lua_State* L, T* value, const char* metatable) {
         auto** a = static_cast<T**>(lua_newuserdata(L, sizeof(T*)));  // Create userdata
         *a = value;
         luaL_getmetatable(L, metatable);
         lua_setmetatable(L, -2);
-    }
-
-    template <typename... Rs>
-    using call_void = std::enable_if_t<detail::sizeof_is_v<1, Rs...> && detail::all_are_v<void, Rs...>, void>;
-
-    template <typename... Rs>
-    using call_return = std::enable_if_t<detail::none_is_v<void, Rs...>, detail::multi_ret_t<Rs...>>;
-
-    template <typename... Rs>
-    static call_void<Rs...> ReportErrorWithReturn(const std::function<void(const std::string&)>& reporter, std::string&& message) {
-        reporter(std::forward<std::string>(message));
-    }
-
-    template <typename... Rs>
-    static call_return<Rs...> ReportErrorWithReturn(const std::function<void(const std::string&)>& reporter, std::string&& message) {
-        reporter(std::forward<std::string>(message));
-        return {};
     }
 
     /// Try to call object as Lua function.
@@ -928,10 +960,10 @@ public:
     /// \param args Arguments to call function with.
     /// \return Void.
     template <typename... Rs, typename... Args>
-    static call_void<Rs...> Call(lua_State* L, const std::function<void(const std::string&)>& reporter, Args&&... args) {
+    static call_void_t<Rs...> Call(lua_State* L, const std::function<void(const std::string&)>& reporter, Args&&... args) {
         Push(L, std::forward<Args>(args)...);
         try {
-            Marshalling::Call(L, detail::count_expected_v<Args...>, 0);
+            Marshalling::Call(L, meta::count_expected_v<Args...>, 0);
         } catch (const std::exception& e) {
             reporter(e.what());
         }
@@ -945,15 +977,14 @@ public:
     /// \param args Arguments to pass to Lua function.
     /// \return Return value of Lua function.
     template <typename... Rs, typename... Args>
-    static call_return<Rs...> Call(lua_State* L, const std::function<void(const std::string&)>& reporter, Args&&... args) {
+    static call_return_t<Rs...> Call(lua_State* L, const std::function<void(const std::string&)>& reporter, Args&&... args) {
         Push(L, std::forward<Args>(args)...);
         try {
-            Marshalling::Call(L, detail::count_expected_v<Args...>, detail::count_expected_v<Rs...>);
+            Marshalling::Call(L, meta::count_expected_v<Args...>, meta::count_expected_v<Rs...>);
         } catch (const std::exception& e) {
-            reporter(e.what());
-            return {};
+            return ReportErrorWithReturn<Rs...>(reporter, e.what());
         }
-        PopGuard guard{L, detail::count_expected_v<Rs...>};
+        PopGuard guard{L, meta::count_expected_v<Rs...>};
         return Get<Rs...>(L, -1, reporter);
     }
 };
