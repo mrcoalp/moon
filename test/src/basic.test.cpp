@@ -13,39 +13,52 @@ TEST_CASE("initialize and close state", "[basic]") {
     REQUIRE(Moon::GetState() == nullptr);
 }
 
-TEST_CASE("index operations", "[basic]") {
+SCENARIO("index operations", "[basic]") {
     Moon::Init();
+    std::string log;
+    Moon::SetLogger([&log](const auto& log_) { log = log_; });
+    BEGIN_STACK_GUARD
 
-    SECTION("pop stack protection", "[basic]") {
-        BEGIN_STACK_GUARD
-        Moon::Pop();
-        Moon::Pop(4);
-        END_STACK_GUARD
+    GIVEN("an empty lua stack") {
+        WHEN("we pop stack") {
+            Moon::Pop();
+            Moon::Pop(4);
+
+            THEN("no error should occur but a warning must be logged") {
+                REQUIRE(log.find("WARNING") != log.size());
+                REQUIRE_FALSE(Moon::HasError());
+            }
+        }
+
+        WHEN("we check for valid index") {
+            Moon::PushValues(2, 3, 4, 5);
+
+            THEN("indices can be validated") {
+                REQUIRE(Moon::IsValidIndex(3));
+                REQUIRE_FALSE(Moon::IsValidIndex(-5));
+                REQUIRE(Moon::IsValidIndex(-3));
+                REQUIRE_FALSE(Moon::IsValidIndex(0));
+                REQUIRE_FALSE(Moon::IsValidIndex(5));
+            }
+
+            Moon::Pop(4);
+        }
+
+        WHEN("we convert negative index") {
+            Moon::PushValues(2, 3, 4, 5);
+
+            THEN("indices can be converted") {
+                REQUIRE(Moon::ConvertNegativeIndex(-1) == 4);
+                REQUIRE(Moon::ConvertNegativeIndex(-1) == Moon::GetTop());
+                REQUIRE(Moon::ConvertNegativeIndex(-3) == 2);
+                REQUIRE(Moon::ConvertNegativeIndex(3) == 3);
+            }
+
+            Moon::Pop(4);
+        }
     }
 
-    SECTION("check for valid index") {
-        BEGIN_STACK_GUARD
-        Moon::PushValues(2, 3, 4, 5);
-        REQUIRE(Moon::IsValidIndex(3));
-        REQUIRE_FALSE(Moon::IsValidIndex(-5));
-        REQUIRE(Moon::IsValidIndex(-3));
-        REQUIRE_FALSE(Moon::IsValidIndex(0));
-        REQUIRE_FALSE(Moon::IsValidIndex(5));
-        Moon::Pop(4);
-        END_STACK_GUARD
-    }
-
-    SECTION("convert negative index") {
-        BEGIN_STACK_GUARD
-        Moon::PushValues(2, 3, 4, 5);
-        REQUIRE(Moon::ConvertNegativeIndex(-1) == 4);
-        REQUIRE(Moon::ConvertNegativeIndex(-1) == Moon::GetTop());
-        REQUIRE(Moon::ConvertNegativeIndex(-3) == 2);
-        REQUIRE(Moon::ConvertNegativeIndex(3) == 3);
-        Moon::Pop(4);
-        END_STACK_GUARD
-    }
-
+    END_STACK_GUARD
     Moon::CloseState();
 }
 
@@ -103,16 +116,41 @@ TEST_CASE("print stack elements", "[basic]") {
     Moon::CloseState();
 }
 
-TEST_CASE("run code with and without errors", "[basic]") {
+SCENARIO("run code", "[basic]") {
     Moon::Init();
-    REQUIRE(Moon::RunCode("assert(true)"));
-    REQUIRE_FALSE(Moon::HasError());
-    REQUIRE_FALSE(Moon::RunCode("assert(false)"));
-    REQUIRE(Moon::HasError());
-    Moon::ClearError();
-    REQUIRE_FALSE(Moon::RunCode("&"));
-    REQUIRE(Moon::HasError());
-    Moon::ClearError();
+    BEGIN_STACK_GUARD
+
+    GIVEN("some lua code snippets") {
+        const char* assertTrue = "assert(true)";
+        const char* assertFalse = "assert(false)";
+        const char* faulty = "&";
+
+        WHEN("code runs - assert true") {
+            REQUIRE(Moon::RunCode(assertTrue));
+
+            THEN("no error should occur") { REQUIRE_FALSE(Moon::HasError()); }
+        }
+
+        AND_WHEN("code runs - assert false") {
+            REQUIRE_FALSE(Moon::RunCode(assertFalse));
+
+            THEN("error should occur") {
+                REQUIRE(Moon::HasError());
+                Moon::ClearError();
+            }
+        }
+
+        AND_WHEN("code runs - invalid code") {
+            REQUIRE_FALSE(Moon::RunCode(faulty));
+
+            THEN("error should occur") {
+                REQUIRE(Moon::HasError());
+                Moon::ClearError();
+            }
+        }
+    }
+
+    END_STACK_GUARD
     Moon::CloseState();
 }
 
@@ -357,6 +395,72 @@ double = 3.14
     REQUIRE(std::string(Moon::Get<const char*>("constChar")) == "passes");
     Moon::CleanGlobalVariable("double");
     REQUIRE_FALSE(Moon::Get<double>("double") == 3.14);
+    END_STACK_GUARD
+    Moon::CloseState();
+}
+
+SCENARIO("test multiple return getters", "[basic]") {
+    Moon::Init();
+    std::string log;
+    Moon::SetLogger([&log](const auto& log_) { log = log_; });
+    BEGIN_STACK_GUARD
+
+    GIVEN("an empty lua stack") {
+        REQUIRE(Moon::GetTop() == 0);
+
+        WHEN("values are pushed to stack") {
+            REQUIRE(Moon::RunCode("return 1, 'passed', true"));
+
+            THEN("stack must contain 3 values") { REQUIRE(Moon::GetTop() == 3); }
+
+            AND_THEN("values can be retrieved as tuple") {
+                auto tup = Moon::Get<std::tuple<int, std::string, bool>>(-1);
+                REQUIRE(std::get<0>(tup) == 1);
+                REQUIRE(std::get<1>(tup) == "passed");
+                REQUIRE(std::get<2>(tup));
+            }
+
+            AND_THEN("values can be retrieved as tuple list") {
+                auto tup = Moon::Get<int, std::string, bool>(-1);
+                REQUIRE(std::get<0>(tup) == 1);
+                REQUIRE(std::get<1>(tup) == "passed");
+                REQUIRE(std::get<2>(tup));
+            }
+
+            AND_THEN("partial returns are still valid") {
+                REQUIRE(Moon::Get<bool>(-1));
+                auto tup = Moon::Get<std::string, bool>(-1);
+                REQUIRE(std::get<0>(tup) == "passed");
+                REQUIRE(std::get<1>(tup));
+            }
+
+            AND_THEN("errors are still tracked in multi return") {
+                Moon::Get<std::string, bool, double>(-1);
+                REQUIRE(Moon::HasError());
+                REQUIRE(log.find("type check failed") != log.size());
+                log.clear();
+                Moon::ClearError();
+            }
+
+            Moon::Pop(3);
+        }
+
+        AND_WHEN("function is pushed to stack") {
+            REQUIRE(Moon::RunCode("return function() return 1, 'passed', true end"));
+
+            THEN("stack must contain 1 value") { REQUIRE(Moon::GetTop() == 1); }
+
+            AND_THEN("values can be retrieved from function as tuple") {
+                auto fun = Moon::Get<std::function<std::tuple<int, std::string, bool>()>>(-1);
+                REQUIRE(std::get<0>(fun()) == 1);
+                REQUIRE(std::get<1>(fun()) == "passed");
+                REQUIRE(std::get<2>(fun()));
+            }
+
+            Moon::Pop(1);
+        }
+    }
+
     END_STACK_GUARD
     Moon::CloseState();
 }
