@@ -79,20 +79,18 @@ TEST_CASE("use user type in functions", "[scripting][functions]") {
     Moon::RegisterClass<UserDefinedType>();
 
     SECTION("push user type to Lua function") {
-        Moon::RunCode("function Object(object, increment) assert(object.m_prop + increment == 6) end");
+        Moon::RunCode("function Object(object, increment) return object.m_prop + increment == 6 end");
         UserDefinedType o(3);
         BEGIN_STACK_GUARD
-        REQUIRE(Moon::Call("Object", &o, 3));
+        REQUIRE(Moon::Call<bool>("Object", &o, 3));
         END_STACK_GUARD
     }
 
     SECTION("get user type from Lua function") {
         Moon::RunCode("function GetObject(prop) return UserDefinedType(prop) end");
-        UserDefinedType o;
         BEGIN_STACK_GUARD
-        REQUIRE(Moon::Call(o, "GetObject", 2));
+        REQUIRE(Moon::Call<UserDefinedType>("GetObject", 2).GetProp() == 2);
         END_STACK_GUARD
-        REQUIRE(o.GetProp() == 2);
     }
 
     Moon::CloseState();

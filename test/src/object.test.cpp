@@ -15,7 +15,7 @@ SCENARIO("moon object reference base class", "[basic][reference]") {
         WHEN("a value is pushed to Lua and a new reference is created from top index") {
             int topRefIndex = (int)lua_rawlen(Moon::GetState(), LUA_REGISTRYINDEX);
             Moon::Push(20);
-            moon::PopGuard popGuard{Moon::GetState()};
+            moon::Stack::PopGuard popGuard{Moon::GetState()};
             moon::Reference ref2(Moon::GetState());
             int key = ref2.GetKey();
 
@@ -337,9 +337,70 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
 
             CHECK_STACK_GUARD
         }
-    }
 
-    // TODO: Add more tests with more types.
+        AND_WHEN("booleans are created in lua stack") {
+            bool a = true;
+            auto a_ = Moon::MakeObject(a);
+
+            THEN("type should be valid") { REQUIRE(a_.Is<bool>()); }
+
+            AND_THEN("type should not be confused as integral") {
+                REQUIRE_FALSE(a_.Is<int>());
+                REQUIRE_FALSE(a_.Is<unsigned>());
+                REQUIRE_FALSE(a_.Is<uint16_t>());
+                REQUIRE_FALSE(a_.Is<char>());
+            }
+
+            AND_THEN("objects can be converted to booleans") { REQUIRE(a_.As<bool>()); }
+
+            CHECK_STACK_GUARD
+        }
+
+        AND_WHEN("strings are created in lua stack") {
+            std::string a = "passed";
+            const char* b = "passed";
+            auto a_ = Moon::MakeObject(a);
+            auto b_ = Moon::MakeObject(b);
+
+            THEN("types should be valid") {
+                REQUIRE(a_.Is<std::string>());
+                REQUIRE(b_.Is<std::string>());
+                REQUIRE(a_.Is<const char*>());
+                REQUIRE(b_.Is<const char*>());
+            }
+
+            AND_THEN("type should not be confused as other pointers") {
+                REQUIRE_FALSE(a_.Is<int*>());
+                REQUIRE_FALSE(b_.Is<void*>());
+            }
+
+            AND_THEN("objects can be converted to strings and c strings") {
+                REQUIRE(a_.As<std::string>() == "passed");
+                REQUIRE(strcmp(a_.As<const char*>(), "passed") == 0);
+            }
+
+            CHECK_STACK_GUARD
+        }
+
+        AND_WHEN("pointers are created in lua stack") {
+            auto* a = new int;
+            auto* b = new float;
+            auto a_ = Moon::MakeObject(a);
+            auto b_ = Moon::MakeObject(b);
+
+            THEN("types should be valid and simply considered userdata") {
+                REQUIRE(a_.Is<int*>());
+                REQUIRE(b_.Is<void*>());
+                REQUIRE(a_.Is<char*>());
+                REQUIRE(b_.Is<unsigned*>());
+            }
+
+            delete a;
+            delete b;
+
+            CHECK_STACK_GUARD
+        }
+    }
 
     END_STACK_GUARD
     REQUIRE_FALSE(Moon::HasError());
@@ -359,7 +420,7 @@ SCENARIO("callable objects", "[object][functions][basic]") {
         REQUIRE(Moon::RunCode("return function(a, b, c) return a, b, c end"));
 
         WHEN("we try to create some callable objects") {
-            moon::PopGuard pop{Moon::GetState(), 5};
+            moon::Stack::PopGuard pop{Moon::GetState(), 5};
 
             std::vector<moon::Object> functions = {Moon::MakeObjectFromIndex(1), Moon::MakeObjectFromIndex(2), Moon::MakeObjectFromIndex(3),
                                                    Moon::MakeObjectFromIndex(4), Moon::MakeObjectFromIndex(5)};
