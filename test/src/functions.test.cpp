@@ -91,6 +91,10 @@ TEST_CASE("register C++ functions, lambdas as global lua functions", "[functions
         Moon::RegisterFunction("TestCPPStaticFunction", [&vec](std::vector<int> vec_) { vec = std::move(vec_); });
         REQUIRE(Moon::RunCode("TestCPPStaticFunction({1, 2, 3})"));
         REQUIRE(vec[1] == 2);
+        bool b = false;
+        Moon::RegisterFunction("TestTuple", [&b](std::tuple<int, bool, std::string> tup) { b = std::get<1>(tup); });
+        REQUIRE(Moon::RunCode("TestTuple(1, true, 'passed')"));
+        REQUIRE(b);
     }
 
     SECTION("register lambda functions with return") {
@@ -100,6 +104,8 @@ TEST_CASE("register C++ functions, lambdas as global lua functions", "[functions
         REQUIRE(Moon::RunCode("local passed = TestVec({'passed', 'failed'})[1]; assert(passed == 'passed')"));
         Moon::RegisterFunction("TestMap", [](moon::LuaMap<std::string> map) { return map; });
         REQUIRE(Moon::RunCode("local passed = TestMap({first = 'passed'}); assert(passed['first'] == 'passed')"));
+        Moon::RegisterFunction("TestTuple", []() { return std::make_tuple(1, true, "passed"); });
+        REQUIRE(Moon::RunCode("local a, b, c = TestTuple(); assert(b)"));
     }
 
     SECTION("register functions with optional args") {

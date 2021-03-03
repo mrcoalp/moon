@@ -745,7 +745,10 @@ public:
     static meta::is_tuple_t<R> GetValue(lua_State* L, int index) {
         ensurePositiveIndex(index, L);
         constexpr size_t elements = std::tuple_size_v<R>;
-        return getTupleHelper<R>(std::make_index_sequence<elements>{}, L, index - elements + 1);
+        // Ensure we have a proper starting index, even when dealing with function call args
+        int starting = index > 1 ? index - elements + 1 : index;
+        runtime_assert((starting > 0), "Invalid starting index when getting tuple");
+        return getTupleHelper<R>(std::make_index_sequence<elements>{}, L, starting);
     }
 
     template <typename T>
@@ -1132,7 +1135,7 @@ struct STLFunctionSpread<std::function<Ret(Args...)>> {
     /// \return STL function that will call moon object.
     static std::function<Ret(Args...)> GetFunctor(lua_State* L, int index) {
         Object obj(L, index);
-        return [obj](Args... args) { return obj.Call<Ret>(std::forward<Args>(args)...); };
+        return [obj](Args&&... args) { return obj.Call<Ret>(std::forward<Args>(args)...); };
     }
 };
 
@@ -1143,7 +1146,7 @@ public:
     virtual int Call(lua_State*) const = 0;
 
     static void Register(lua_State* L) {
-        luaL_newmetatable(L, moon::LUA_INVOKABLE_HOLDER_META_NAME);
+        luaL_newmetatable(L, LUA_INVOKABLE_HOLDER_META_NAME);
         int metatable = lua_gettop(L);
 
         lua_pushstring(L, "__call");
@@ -1169,14 +1172,14 @@ protected:
 private:
     static int call(lua_State* L) {
         void* storage = lua_touserdata(L, 1);
-        auto* invokable = *static_cast<moon::Invokable**>(storage);
+        auto* invokable = *static_cast<Invokable**>(storage);
         lua_remove(L, 1);
         return invokable->Call(L);
     }
 
     static int gc(lua_State* L) {
         void* storage = lua_touserdata(L, 1);
-        auto* invokable = *static_cast<moon::Invokable**>(storage);
+        auto* invokable = *static_cast<Invokable**>(storage);
         delete invokable;
         return 0;
     }
@@ -1195,7 +1198,7 @@ private:
     template <size_t... indices, typename RetHelper>
     static int callHelper(std::index_sequence<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
         Stack::Push(L, func(std::forward<Args>(Stack::Get<Args>(L, indices + 1, s_reportError))...));
-        return 1;
+        return meta::count_expected_v<RetHelper>;
     }
 
     template <size_t... indices>
@@ -1243,14 +1246,14 @@ public:
 
     /// Checks if an error is stored. Every time an error occurs it is stored until manual removal.
     /// \return Whether or not error string is empty.
-    static bool HasError() { return !s_error.empty(); }
+    static inline bool HasError() { return !s_error.empty(); }
 
     /// Getter for the current stored error message.
     /// \return Error message.
-    static const std::string& GetErrorMessage() { return s_error; }
+    static inline const std::string& GetErrorMessage() { return s_error; }
 
     /// Clears error message and state.
-    static void ClearError() { s_error.clear(); }
+    static inline void ClearError() { s_error.clear(); }
 
     /// Getter for top index in Lua stack.
     /// \return Lua stack top index.
@@ -1336,11 +1339,10 @@ public:
     /// \param name Lua variable name.
     /// \return C object.
     template <typename R>
-    static inline R Get(const char* name) {
-        lua_getglobal(s_state, name);
-        const R r = Get<R>(GetTop());
-        lua_pop(s_state, 1);
-        return r;
+    static decltype(auto) Get(const std::string& name) {
+        lua_getglobal(s_state, name.c_str());
+        moon::Stack::PopGuard guard{s_state};
+        return Get<R>(GetTop());
     }
 
     /// Prints element at specified index. Shows value when possible or type otherwise.
@@ -1417,7 +1419,7 @@ public:
     /// \param map Map to check.
     /// \return True if map contains all keys, false otherwise.
     template <typename T>
-    static bool EnsureMapKeys(const std::vector<std::string>& keys, const moon::LuaMap<T>& map) {
+    static inline bool EnsureMapKeys(const std::vector<std::string>& keys, const moon::LuaMap<T>& map) {
         return std::all_of(keys.cbegin(), keys.cend(), [&map](const std::string& key) { return map.find(key) != map.cend(); });
     }
 
@@ -1425,7 +1427,7 @@ public:
     /// \tparam T Value type.
     /// \param value Value pushed to Lua stack.
     template <typename T>
-    static void Push(T&& value) {
+    static inline void Push(T&& value) {
         moon::Stack::Push(s_state, std::forward<T>(value));
     }
 
@@ -1448,10 +1450,10 @@ public:
     }
 
     /// Push a nil (null) value to Lua stack.
-    static void PushNull() { lua_pushnil(s_state); }
+    static inline void PushNull() { lua_pushnil(s_state); }
 
     /// Pushes a new empty table/map to stack.
-    static void PushTable() { lua_newtable(s_state); }
+    static inline void PushTable() { lua_newtable(s_state); }
 
     /// Tries to pop specified number of elements from stack. Logs an error if top is reached not popping any more.
     /// \param nrOfElements Number of elements to pop from Lua stack.
@@ -1470,7 +1472,7 @@ public:
     /// \tparam T Class to be registered.
     /// \param nameSpace Class namespace.
     template <class T>
-    static void RegisterClass(const char* nameSpace = nullptr) {
+    static inline void RegisterClass(const char* nameSpace = nullptr) {
         moon::LuaClass<T>::Register(s_state, nameSpace);
     }
 
@@ -1482,7 +1484,7 @@ public:
     static void RegisterFunction(const std::string& name, Func&& func) {
         auto deducedFunc = std::function{std::forward<Func>(func)};
         moon::Stack::PushUserData(s_state, new moon::InvokableSTLFunction(deducedFunc), moon::LUA_INVOKABLE_HOLDER_META_NAME);
-        SetGlobalVariable(name.c_str());
+        SetGlobalVariable(name);
     }
 
     /// Calls a global Lua function.
@@ -1492,8 +1494,8 @@ public:
     /// \param args Arguments to call function with.
     /// \return Return value of function.
     template <typename... Ret, typename... Args>
-    static decltype(auto) Call(const char* name, Args&&... args) {
-        lua_getglobal(s_state, name);
+    static decltype(auto) Call(const std::string& name, Args&&... args) {
+        lua_getglobal(s_state, name.c_str());
         if (!lua_isfunction(s_state, -1)) {
             Pop();
             return moon::Stack::ReportErrorWithReturn<Ret...>(error, "Tried to call a non global function");
@@ -1503,11 +1505,11 @@ public:
 
     /// Sets top of stack as a global variable.
     /// \param name Name of the variable to set.
-    static void SetGlobalVariable(const char* name) { lua_setglobal(s_state, name); }
+    static void SetGlobalVariable(const std::string& name) { lua_setglobal(s_state, name.c_str()); }
 
     /// Cleans/nulls a global variable.
     /// \param name Variable to clean.
-    static void CleanGlobalVariable(const char* name) {
+    static void CleanGlobalVariable(const std::string& name) {
         PushNull();
         SetGlobalVariable(name);
     }
@@ -1543,7 +1545,7 @@ private:
     }
 
     /// Logs a warning message.
-    static void warning(const std::string& message) { s_logger("Moon :: WARNING: " + message); }
+    static inline void warning(const std::string& message) { s_logger("Moon :: WARNING: " + message); }
 
     /// Logs and stores an error message.
     static void error(const std::string& message) {
