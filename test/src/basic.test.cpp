@@ -174,6 +174,10 @@ TEST_CASE("check lua types", "[basic]") {
     Moon::Init();
     BEGIN_STACK_GUARD
     Moon::PushValues(2, true, "passed", std::vector<int>{1, 2, 3});
+    REQUIRE(Moon::Check<int>(1));
+    REQUIRE(Moon::Check<bool>(2));
+    REQUIRE(Moon::Check<std::string>(3));
+    REQUIRE(Moon::Check<std::vector<int>>(4));
     Moon::PushNull();
     Moon::PushTable();
     REQUIRE(Moon::GetType(-3) == moon::LuaType::Table);
@@ -187,96 +191,99 @@ TEST_CASE("check lua types", "[basic]") {
 
 TEST_CASE("push and get values, non-user types", "[basic]") {
     Moon::Init();
+    BEGIN_STACK_GUARD
 
     SECTION("push and get a bool") {
-        BEGIN_STACK_GUARD
         Moon::Push(true);
+        REQUIRE(Moon::Check<bool>(-1));
         auto b = Moon::Get<bool>(-1);
         REQUIRE(b);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get an integer") {
-        BEGIN_STACK_GUARD
         Moon::Push(3);
+        REQUIRE(Moon::Check<int>(-1));
         auto i = Moon::Get<int>(-1);
         REQUIRE(i == 3);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get an unsigned integer") {
-        BEGIN_STACK_GUARD
         Moon::Push(3);
+        REQUIRE(Moon::Check<unsigned>(-1));
         auto u = Moon::Get<uint32_t>(-1);
         REQUIRE(u == 3);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get a float") {
-        BEGIN_STACK_GUARD
         Moon::Push(3.14f);
+        REQUIRE(Moon::Check<float>(-1));
         auto f = Moon::Get<float>(-1);
         REQUIRE(f == 3.14f);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get a double") {
-        BEGIN_STACK_GUARD
         Moon::Push(3.14);
+        REQUIRE(Moon::Check<double>(-1));
         auto d = Moon::Get<double>(-1);
         REQUIRE(d == 3.14);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get a string") {
-        BEGIN_STACK_GUARD
         Moon::Push("passed");
+        REQUIRE(Moon::Check<std::string>(-1));
         auto s = Moon::Get<std::string>(-1);
         REQUIRE(s == "passed");
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get a C string") {
-        BEGIN_STACK_GUARD
         Moon::Push("passed");
+        REQUIRE(Moon::Check<std::string>(-1));
         const auto* cs = Moon::Get<const char*>(-1);
         REQUIRE(strcmp(cs, "passed") == 0);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push and get a char") {
-        BEGIN_STACK_GUARD
         Moon::Push('m');
+        REQUIRE(Moon::Check<char>(-1));
         auto c = Moon::Get<char>(-1);
         REQUIRE(c == 'm');
         Moon::Pop();
-        END_STACK_GUARD
+    }
+
+    SECTION("push and get a tuple") {
+        Moon::Push(std::make_tuple(1, true, "passed", std::make_tuple(2, false, "passed_2")));
+        auto t = Moon::Get<int, bool, std::string, int, bool, std::string>(-1);
+        REQUIRE(std::get<0>(t) == 1);
+        REQUIRE(std::get<1>(t));
+        REQUIRE(std::get<2>(t) == "passed");
+        REQUIRE(std::get<3>(t) == 2);
+        REQUIRE_FALSE(std::get<4>(t));
+        REQUIRE(std::get<5>(t) == "passed_2");
+        Moon::Pop(6);
     }
 
     SECTION("push a string try to get a bool") {
-        BEGIN_STACK_GUARD
         Moon::Push("not_passed");
+        REQUIRE_FALSE(Moon::Check<bool>(-1));
         auto b = Moon::Get<bool>(-1);
         REQUIRE_FALSE(b);
         Moon::Pop();
-        END_STACK_GUARD
     }
 
     SECTION("push a string try to get a bool with throw") {
-        BEGIN_STACK_GUARD
         Moon::Push("not_passed");
         REQUIRE_THROWS(moon::Marshalling::GetValue<bool>(Moon::GetState(), -1));
         Moon::Pop();
-        END_STACK_GUARD
     }
 
+    END_STACK_GUARD
     Moon::CloseState();
 }
 
@@ -387,6 +394,11 @@ double = 3.14
 )");
     Moon::Push("constChar", "passes");
     BEGIN_STACK_GUARD
+    REQUIRE(Moon::Check<std::string>("string"));
+    REQUIRE(Moon::Check<bool>("bool"));
+    REQUIRE(Moon::Check<int>("int"));
+    REQUIRE(Moon::Check<float>("float"));
+    REQUIRE(Moon::Check<double>("double"));
     REQUIRE(Moon::Get<std::string>("string") == "passed");
     REQUIRE(Moon::Get<bool>("bool"));
     REQUIRE(Moon::Get<int>("int") == -1);

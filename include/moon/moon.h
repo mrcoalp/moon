@@ -1325,6 +1325,26 @@ public:
     /// \return Moon type of element.
     static moon::LuaType GetType(int index = 1) { return static_cast<moon::LuaType>(lua_type(s_state, index)); }
 
+    /// Checks if element at index can be used as specified C type.
+    /// \tparam T C type to check.
+    /// \param index Index in Lua stack.
+    /// \return Whether or not it can.
+    template <typename T>
+    static inline bool Check(int index = 1) {
+        return moon::Marshalling::CheckValue<T>(s_state, index);
+    }
+
+    /// Checks if global with specified name can be used as specified C type.
+    /// \tparam T C type to check.
+    /// \param name Global name.
+    /// \return Whether or not it can.
+    template <typename T>
+    static bool Check(const std::string& name) {
+        lua_getglobal(s_state, name.c_str());
+        moon::Stack::PopGuard guard{s_state};
+        return Check<T>(GetTop());
+    }
+
     /// Gets element at specified Lua stack index as C object.
     /// \tparam R C type to cast Lua object to.
     /// \param index Index of element in stack.
@@ -1436,7 +1456,7 @@ public:
     /// \param name Variable name.
     /// \param value Value pushed to Lua stack.
     template <typename T>
-    static void Push(const char* name, T&& value) {
+    static void Push(const std::string& name, T&& value) {
         Push(std::forward<T>(value));
         SetGlobalVariable(name);
     }
