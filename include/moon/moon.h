@@ -1157,9 +1157,13 @@ public:
         Call<void>(std::forward<Args>(args)...);
     }
 
-    explicit operator bool() { return IsLoaded(); }
-
-    explicit operator bool() const { return IsLoaded(); }
+    /// Implicit conversion is possible.
+    /// \tparam T Type to convert to.
+    /// \return Object as C type.
+    template <typename T>
+    operator T() const {
+        return As<T>();
+    }
 
     /// Will save top stack element as ref and pop it, messing with stack.
     /// \param L Lua stack.

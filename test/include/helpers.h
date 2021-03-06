@@ -56,6 +56,18 @@ struct LoggerSetter {
 
     inline const std::string& GetError() const { return m_error; }
 
+    void Clear() {
+        m_info.clear();
+        m_warning.clear();
+        m_error.clear();
+    }
+
+    bool ErrorCheck() {
+        bool has = !m_error.empty();
+        Clear();
+        return has;
+    }
+
     inline bool NoErrors() const { return m_error.empty(); }
 
 private:

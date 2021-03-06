@@ -121,7 +121,7 @@ TEST_CASE("register C++ functions, lambdas as global lua functions", "[functions
     }
 
     SECTION("register functions with optional args") {
-        Moon::RegisterFunction("Optional", [](moon::Object optional) { return static_cast<bool>(optional); });
+        Moon::RegisterFunction("Optional", [](moon::Object optional) { return optional.IsLoaded(); });
         REQUIRE(Moon::RunCode("assert(not Optional())"));
         REQUIRE(Moon::RunCode("assert(not Optional(nil))"));
         REQUIRE(Moon::RunCode("assert(Optional(1))"));

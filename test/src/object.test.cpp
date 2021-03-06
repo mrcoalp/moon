@@ -240,17 +240,8 @@ TEST_CASE("dynamic object type", "[object][basic]") {
 
 SCENARIO("lua dynamic objects", "[object][basic]") {
     Moon::Init();
-    std::string error;
-    Moon::SetLogger([&error](moon::Logger::Level level, const std::string& msg) {
-        switch (level) {
-            case moon::Logger::Level::Info:
-            case moon::Logger::Level::Warning:
-                break;
-            case moon::Logger::Level::Error:
-                error = msg;
-                break;
-        }
-    });
+    std::string info, warning, error;
+    LoggerSetter logs{info, warning, error};
     BEGIN_STACK_GUARD
 
     GIVEN("an empty lua stack") {
@@ -311,10 +302,25 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
                 }
             }
 
+            AND_THEN("objects can be assigned to integrals") {
+                for (const auto& obj : objs) {
+                    int i = obj;
+                    unsigned u = obj;
+                    uint16_t u2 = obj;
+                    char ch = obj;
+                    REQUIRE(i == 1);
+                    REQUIRE(u == 1);
+                    REQUIRE(u2 == 1);
+                    REQUIRE(ch == 1);
+                }
+            }
+
             AND_THEN("objects can be converted to string, to use as index in table") {
                 for (const auto& obj : objs) {
                     REQUIRE(obj.As<std::string>() == "1");
                     REQUIRE(strcmp(obj.As<const char*>(), "1") == 0);
+                    std::string s = obj;
+                    REQUIRE(s == "1");
                 }
             }
 
@@ -365,6 +371,8 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
             AND_THEN("objects can be converted to floating point") {
                 REQUIRE(a_.As<float>() == 1.f);  // TODO(mpinto): WIll this fail in some systems?
                 REQUIRE(b_.As<double>() == 1.0);
+                double dl = b_;
+                REQUIRE(dl == 1.0);
             }
 
             CHECK_STACK_GUARD
@@ -383,7 +391,11 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
                 REQUIRE_FALSE(a_.Is<char>());
             }
 
-            AND_THEN("objects can be converted to booleans") { REQUIRE(a_.As<bool>()); }
+            AND_THEN("objects can be converted to booleans") {
+                REQUIRE(a_.As<bool>());
+                bool b = a_;
+                REQUIRE(b);
+            }
 
             CHECK_STACK_GUARD
         }
@@ -441,17 +453,8 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
 
 SCENARIO("callable objects", "[object][functions][basic]") {
     Moon::Init();
-    std::string error;
-    Moon::SetLogger([&error](moon::Logger::Level level, const std::string& msg) {
-        switch (level) {
-            case moon::Logger::Level::Info:
-            case moon::Logger::Level::Warning:
-                break;
-            case moon::Logger::Level::Error:
-                error = msg;
-                break;
-        }
-    });
+    std::string info, warning, error;
+    LoggerSetter logs{info, warning, error};
     BEGIN_STACK_GUARD
 
     GIVEN("some valid functions in lua stack") {
@@ -539,22 +542,17 @@ SCENARIO("callable objects", "[object][functions][basic]") {
             AND_THEN("calling objects should generate errors") {
                 for (const auto& f : functions) {
                     f.Call<void>();
-                    REQUIRE_FALSE(error.empty());
-                    error.clear();
+                    REQUIRE(logs.ErrorCheck());
                     f.Call<void>(false);
-                    REQUIRE_FALSE(error.empty());
-                    error.clear();
+                    REQUIRE(logs.ErrorCheck());
                     f.Call<int>();
-                    REQUIRE_FALSE(error.empty());
-                    error.clear();
+                    REQUIRE(logs.ErrorCheck());
                     f.Call<int>(true);
-                    REQUIRE_FALSE(error.empty());
-                    error.clear();
+                    REQUIRE(logs.ErrorCheck());
                 }
                 Moon::Push("test", true);
                 functions[0].Call<int>();
-                REQUIRE_FALSE(error.empty());
-                error.clear();
+                REQUIRE(logs.ErrorCheck());
             }
 
             AND_THEN("objects can be unloaded") {
@@ -570,6 +568,6 @@ SCENARIO("callable objects", "[object][functions][basic]") {
     }
 
     END_STACK_GUARD
-    REQUIRE(error.empty());
+    REQUIRE(logs.NoErrors());
     Moon::CloseState();
 }
