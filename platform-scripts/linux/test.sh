@@ -47,8 +47,8 @@ if [ $COVERAGE = 1 ]; then
 
   mkdir moon_coverage_html
 
-  gcovr --html --html-details -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage_html/index.html || echo "Could not generate html coverage report"
-  gcovr --xml -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage.xml || echo "Could not generate xml coverage report"
+  gcovr --exclude-unreachable-branches --html --html-details -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage_html/index.html || echo "Could not generate html coverage report"
+  gcovr --exclude-unreachable-branches --xml -r "$OUT" -e "$OUT"/test --object-directory=. -o moon_coverage.xml || echo "Could not generate xml coverage report"
 
   rm -rf "$OUT"/moon_coverage_html
   rm -rf "$OUT"/moon_coverage.xml

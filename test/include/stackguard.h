@@ -5,15 +5,17 @@
 
 #include "moon/moon.h"
 
-#define BEGIN_STACK_GUARD \
-    int stack_top_begin;  \
-    int stack_top_end;    \
-    {                     \
+#define BEGIN_STACK_GUARD   \
+    int stack_top_begin{0}; \
+    int stack_top_end{0};   \
+    {                       \
         StackGuard guard{stack_top_begin, stack_top_end};
 
 #define END_STACK_GUARD \
     }                   \
     REQUIRE(stack_top_begin == stack_top_end);
+
+#define CHECK_STACK_GUARD REQUIRE(guard.Check());
 
 class StackGuard {
 public:
@@ -21,7 +23,7 @@ public:
 
     ~StackGuard() { m_end = Moon::GetTop(); }
 
-    inline bool Check() const { return m_begin == m_end; }
+    [[nodiscard]] inline bool Check() const { return Moon::GetTop() == m_begin; }
 
 private:
     int& m_begin;

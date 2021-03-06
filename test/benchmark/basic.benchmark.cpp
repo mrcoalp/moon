@@ -5,6 +5,7 @@
 TEST_CASE("get values from stack benchmark", "[basic][benchmark]") {
     Moon::Init();
     Moon::PushValues(true, 1, "string", new int[20]);
+    CHECK(Moon::RunCode("return function(s) return s end"));
 
     CHECK(Moon::Get<bool>(1));
     CHECK(Moon::Get<int>(2) == 1);
@@ -16,6 +17,9 @@ TEST_CASE("get values from stack benchmark", "[basic][benchmark]") {
     BENCHMARK("get string") { return Moon::Get<std::string>(3); };
     BENCHMARK("get const char") { return Moon::Get<const char*>(3); };
     BENCHMARK("get pointer") { return Moon::Get<void*>(4); };
+    BENCHMARK("get function") { return Moon::Get<std::function<bool(bool)>>(5); };
+    BENCHMARK("get reference") { return Moon::Get<moon::Reference>(1); };
+    BENCHMARK("get object") { return Moon::Get<moon::Object>(1); };
 
     Moon::CloseState();
 }
