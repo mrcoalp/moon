@@ -5,6 +5,17 @@
 
 SCENARIO("moon object reference base class", "[basic][reference]") {
     Moon::Init();
+    std::string error;
+    Moon::SetLogger([&error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("an empty Lua stack and an unloaded reference") {
@@ -32,12 +43,23 @@ SCENARIO("moon object reference base class", "[basic][reference]") {
     }
 
     END_STACK_GUARD
-    REQUIRE_FALSE(Moon::HasError());
+    REQUIRE(error.empty());
     Moon::CloseState();
 }
 
 TEST_CASE("dynamic object type", "[object][basic]") {
     Moon::Init();
+    std::string error;
+    Moon::SetLogger([&error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
 
     SECTION("create objects from Lua stack") {
         BEGIN_STACK_GUARD
@@ -204,21 +226,32 @@ TEST_CASE("dynamic object type", "[object][basic]") {
         Moon::Pop();
 
         o.As<int>();
-        REQUIRE(Moon::HasError());
-        Moon::ClearError();
+        REQUIRE_FALSE(error.empty());
+        error.clear();
         o2.As<bool>();
-        REQUIRE(Moon::HasError());
-        Moon::ClearError();
+        REQUIRE_FALSE(error.empty());
+        error.clear();
 
         END_STACK_GUARD
     }
 
-    REQUIRE_FALSE(Moon::HasError());
+    REQUIRE(error.empty());
     Moon::CloseState();
 }
 
 SCENARIO("lua dynamic objects", "[object][basic]") {
     Moon::Init();
+    std::string error;
+    Moon::SetLogger([&error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("an empty lua stack") {
@@ -289,17 +322,17 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
             AND_THEN("trying to convert objects to wrong type raises an error") {
                 for (const auto& obj : objs) {
                     obj.As<bool>();
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                     obj.As<std::vector<int>>();
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                     obj.As<float>();
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                     obj.As<double>();
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                 }
             }
 
@@ -403,13 +436,23 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
     }
 
     END_STACK_GUARD
-    REQUIRE_FALSE(Moon::HasError());
+    REQUIRE(error.empty());
     Moon::CloseState();
 }
 
 SCENARIO("callable objects", "[object][functions][basic]") {
     Moon::Init();
-
+    std::string error;
+    Moon::SetLogger([&error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("some valid functions in lua stack") {
@@ -497,22 +540,22 @@ SCENARIO("callable objects", "[object][functions][basic]") {
             AND_THEN("calling objects should generate errors") {
                 for (const auto& f : functions) {
                     f.Call<void>();
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                     f.Call<void>(false);
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                     f.Call<int>();
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                     f.Call<int>(true);
-                    REQUIRE(Moon::HasError());
-                    Moon::ClearError();
+                    REQUIRE_FALSE(error.empty());
+                    error.clear();
                 }
                 Moon::Push("test", true);
                 functions[0].Call<int>();
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
+                REQUIRE_FALSE(error.empty());
+                error.clear();
             }
 
             AND_THEN("objects can be unloaded") {
@@ -528,7 +571,6 @@ SCENARIO("callable objects", "[object][functions][basic]") {
     }
 
     END_STACK_GUARD
-    REQUIRE_FALSE(Moon::HasError());
-
+    REQUIRE(error.empty());
     Moon::CloseState();
 }
