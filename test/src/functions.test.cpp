@@ -1,7 +1,6 @@
 #include <catch2/catch.hpp>
 
-#include "moon/moon.h"
-#include "stackguard.h"
+#include "helpers.h"
 
 TEST_CASE("call global lua functions", "[functions]") {
     Moon::Init();

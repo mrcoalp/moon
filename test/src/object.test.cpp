@@ -1,7 +1,6 @@
 #include <catch2/catch.hpp>
 
-#include "moon/moon.h"
-#include "stackguard.h"
+#include "helpers.h"
 
 SCENARIO("moon object reference base class", "[basic][reference]") {
     Moon::Init();

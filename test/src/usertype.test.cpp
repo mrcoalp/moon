@@ -1,6 +1,6 @@
 #include <catch2/catch.hpp>
 
-#include "stackguard.h"
+#include "helpers.h"
 #include "userdefinedtype.h"
 
 #ifdef RegisterClass

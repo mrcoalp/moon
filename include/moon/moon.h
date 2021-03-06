@@ -18,14 +18,14 @@
 
 #define MOON_DECLARE_CLASS(_class) static moon::Binding<_class> Binding;
 
-#define MOON_PROPERTY(_property)                      \
-    int Get_##_property(lua_State* L) {               \
-        Moon::Push(_property);                        \
-        return 1;                                     \
-    }                                                 \
-    int Set_##_property(lua_State* L) {               \
-        _property = Moon::Get<decltype(_property)>(); \
-        return 0;                                     \
+#define MOON_PROPERTY(_property)                       \
+    int Get_##_property(lua_State* L) {                \
+        Moon::Push(_property);                         \
+        return 1;                                      \
+    }                                                  \
+    int Set_##_property(lua_State* L) {                \
+        _property = Moon::Get<decltype(_property)>(1); \
+        return 0;                                      \
     }
 
 #define MOON_METHOD(_name) int _name(lua_State* L)
@@ -45,19 +45,19 @@
 namespace moon {
 namespace meta {
 template <typename T, typename Ret = T>
-using is_bool_t = std::enable_if_t<std::is_same_v<T, bool>, Ret>;
+using is_bool_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, bool>, Ret>;
 
 template <typename T, typename Ret = T>
-using is_integral_t = std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>, Ret>;
+using is_integral_t = std::enable_if_t<std::is_integral_v<std::decay_t<T>> && !std::is_same_v<T, bool>, Ret>;
 
 template <typename T, typename Ret = T>
-using is_floating_point_t = std::enable_if_t<std::is_floating_point_v<T>, Ret>;
+using is_floating_point_t = std::enable_if_t<std::is_floating_point_v<std::decay_t<T>>, Ret>;
 
 template <typename T, typename Ret = T>
-using is_string_t = std::enable_if_t<std::is_same_v<T, std::string>, Ret>;
+using is_string_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, std::string>, Ret>;
 
 template <typename T, typename Ret = T>
-using is_c_string_t = std::enable_if_t<std::is_same_v<T, const char*>, Ret>;
+using is_c_string_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, const char*>, Ret>;
 
 template <typename T, typename Ret = T>
 using is_pointer_t = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
@@ -931,7 +931,6 @@ struct Stack {
 
     /// Reports message to specified reporter and returns void.
     /// \tparam Rs Return types.
-    /// \param reporter Reporter function.
     /// \param message Message to report.
     /// \return Void.
     template <typename... Rs>
@@ -941,7 +940,6 @@ struct Stack {
 
     /// Reports message to specified reporter and returns default constructed return type.
     /// \tparam Rs Return types.
-    /// \param reporter Reporter function.
     /// \param message Message to report.
     /// \return Default constructed return type.
     template <typename... Rs>
@@ -950,19 +948,16 @@ struct Stack {
         return {};
     }
 
-    /// Tries to get value from stack at specified index as C type. When failing returns default constructed type.
-    /// \tparam Rs Return types. Can be converted to tuple if multiple.
-    /// \param L Lua stack.
-    /// \param index Element index in stack.
-    /// \param reporter Error reporter function.
-    /// \return Value or default constructed type.
-    template <typename... Rs>
-    static decltype(auto) Get(lua_State* L, int index) {
-        try {
-            return Marshalling::GetValue<meta::multi_ret_t<Rs...>>(L, index);
-        } catch (const std::exception& e) {
-            return ReportErrorWithReturn<Rs...>(e.what());
-        }
+    /// Tries to get value/global from stack at specified index or with specific name. When failing returns default constructed type.
+    /// \tparam Rs Return type. When multiple, converts to tuple.
+    /// \tparam Keys Key type, either integral (index) or string (name).
+    /// \param L Lua state.
+    /// \param keys Keys to get values from.
+    /// \return Type or tuple of types with values.
+    template <typename... Rs, typename... Keys>
+    static decltype(auto) Get(lua_State* L, Keys&&... keys) {
+        static_assert(sizeof...(Rs) == sizeof...(Keys), "Number of returns and keys must match");
+        return meta::multi_ret_t<Rs...>(global<Rs>(L, std::forward<Keys>(keys))...);
     }
 
     /// Pushes values to Lua stack.
@@ -991,7 +986,6 @@ struct Stack {
     /// \tparam Rs Void return specialization.
     /// \tparam Args Arguments types.
     /// \param L Lua stack.
-    /// \param reporter Reporter function.
     /// \param args Arguments to call function with.
     /// \return Void.
     template <typename... Rs, typename... Args>
@@ -1008,7 +1002,6 @@ struct Stack {
     /// \tparam Rs Return type of function.
     /// \tparam Args Arguments types.
     /// \param L Lua stack.
-    /// \param reporter Reporter function.
     /// \param args Arguments to pass to Lua function.
     /// \return Return value of Lua function.
     template <typename... Rs, typename... Args>
@@ -1020,7 +1013,49 @@ struct Stack {
             return ReportErrorWithReturn<Rs...>(e.what());
         }
         PopGuard guard{L, meta::count_expected_v<Rs...>};
-        return Get<Rs...>(L, -1);
+        return global<meta::multi_ret_t<Rs...>>(L, -1);
+    }
+
+private:
+    /// Tries to get global with specified key name.
+    /// \tparam R Return type of values.
+    /// \tparam Key Global key type (string).
+    /// \param L Lua state.
+    /// \param key Global name.
+    /// \return C value.
+    template <typename R, typename Key>
+    static meta::is_string_t<Key, R> global(lua_State* L, Key&& key) {
+        lua_getglobal(L, key.c_str());
+        moon::Stack::PopGuard guard{L};
+        return global<R>(L, -1);
+    }
+
+    /// Tries to get global with specified key name.
+    /// \tparam R Return type of values.
+    /// \tparam Key Global key type (string).
+    /// \param L Lua state.
+    /// \param key Global name.
+    /// \return C value.
+    template <typename R, typename Key>
+    static meta::is_c_string_t<Key, R> global(lua_State* L, Key&& key) {
+        lua_getglobal(L, key);
+        moon::Stack::PopGuard guard{L};
+        return global<R>(L, -1);
+    }
+
+    /// Tries to get global at specified key index.
+    /// \tparam R Return type of values.
+    /// \tparam Key Global key type (integral).
+    /// \param L Lua state.
+    /// \param key Global index in stack.
+    /// \return C value.
+    template <typename R, typename Key>
+    static meta::is_integral_t<Key, R> global(lua_State* L, Key&& key) {
+        try {
+            return Marshalling::GetValue<R>(L, key);
+        } catch (const std::exception& e) {
+            return ReportErrorWithReturn<R>(e.what());
+        }
     }
 };
 
@@ -1354,24 +1389,14 @@ public:
         return Check<T>(GetTop());
     }
 
-    /// Gets element at specified Lua stack index as C object.
-    /// \tparam R C type to cast Lua object to.
-    /// \param index Index of element in stack.
+    /// Gets element(s) at specified Lua stack index and/or global name as C object.
+    /// \tparam Rs C type(s) to cast Lua object to.
+    /// \tparam Keys Integral or string
+    /// \param keys Index or global name to get from Lua stack.
     /// \return C object.
-    template <typename... R>
-    static inline decltype(auto) Get(int index = 1) {
-        return moon::Stack::Get<R...>(s_state, index);
-    }
-
-    /// Gets global Lua variable with specified name as C object.
-    /// \tparam R C object type.
-    /// \param name Lua variable name.
-    /// \return C object.
-    template <typename R>
-    static decltype(auto) Get(const std::string& name) {
-        lua_getglobal(s_state, name.c_str());
-        moon::Stack::PopGuard guard{s_state};
-        return Get<R>(GetTop());
+    template <typename... Rs, typename... Keys>
+    static inline decltype(auto) Get(Keys&&... keys) {
+        return moon::Stack::Get<Rs...>(s_state, std::forward<Keys>(keys)...);
     }
 
     /// Prints element at specified index. Shows value when possible or type otherwise.

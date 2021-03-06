@@ -11,19 +11,19 @@ public:
 
     explicit UserDefinedType(int prop) : m_prop(prop) {}
 
-    explicit UserDefinedType(lua_State*) : m_prop(Moon::Get<int>()) {}
+    explicit UserDefinedType(lua_State*) : m_prop(Moon::Get<int>(1)) {}
 
     MOON_DECLARE_CLASS(UserDefinedType)
 
     MOON_PROPERTY(m_prop)
 
     MOON_METHOD(Getter) {
-        Moon::Push(m_prop + Moon::Get<int>());
+        Moon::Push(m_prop + Moon::Get<int>(1));
         return 1;
     }
 
     MOON_METHOD(Setter) {
-        s_testClass = m_prop = Moon::Get<int>();
+        s_testClass = m_prop = Moon::Get<int>(1);
         return 0;
     }
 

@@ -1,6 +1,6 @@
 #include <catch2/catch.hpp>
 
-#include "stackguard.h"
+#include "helpers.h"
 
 TEST_CASE("initialize and close state", "[basic]") {
     Moon::Init();
@@ -305,7 +305,7 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
 
     SECTION("push and get a tuple") {
         Moon::Push(std::make_tuple(1, true, "passed", std::make_tuple(2, false, "passed_2")));
-        auto t = Moon::Get<int, bool, std::string, int, bool, std::string>(-1);
+        auto t = Moon::Get<int, bool, std::string, int, bool, std::string>(1, 2, 3, 4, 5, 6);
         REQUIRE(std::get<0>(t) == 1);
         REQUIRE(std::get<1>(t));
         REQUIRE(std::get<2>(t) == "passed");
@@ -490,7 +490,7 @@ SCENARIO("test multiple return getters", "[basic]") {
             }
 
             AND_THEN("values can be retrieved as tuple list") {
-                auto tup = Moon::Get<int, std::string, bool>(-1);
+                auto tup = Moon::Get<int, std::string, bool>(-3, -2, -1);
                 REQUIRE(std::get<0>(tup) == 1);
                 REQUIRE(std::get<1>(tup) == "passed");
                 REQUIRE(std::get<2>(tup));
@@ -498,13 +498,13 @@ SCENARIO("test multiple return getters", "[basic]") {
 
             AND_THEN("partial returns are still valid") {
                 REQUIRE(Moon::Get<bool>(-1));
-                auto tup = Moon::Get<std::string, bool>(-1);
+                auto tup = Moon::Get<std::string, bool>(-2, -1);
                 REQUIRE(std::get<0>(tup) == "passed");
                 REQUIRE(std::get<1>(tup));
             }
 
             AND_THEN("errors are still tracked in multi return") {
-                Moon::Get<std::string, bool, double>(-1);
+                Moon::Get<std::string, bool, double>(-3, -2, -1);
                 REQUIRE_FALSE(error.empty());
                 REQUIRE(error.find("type check failed") != error.size());
                 error.clear();
