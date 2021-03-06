@@ -16,7 +16,18 @@ TEST_CASE("initialize and close state", "[basic]") {
 SCENARIO("index operations", "[basic]") {
     Moon::Init();
     std::string log;
-    Moon::SetLogger([&log](const auto& log_) { log = log_; });
+    std::string error;
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("an empty lua stack") {
@@ -25,8 +36,8 @@ SCENARIO("index operations", "[basic]") {
             Moon::Pop(4);
 
             THEN("no error should occur but a warning must be logged") {
-                REQUIRE(log.find("WARNING") != log.size());
-                REQUIRE_FALSE(Moon::HasError());
+                REQUIRE_FALSE(log.empty());
+                REQUIRE(error.empty());
             }
         }
 
@@ -65,7 +76,18 @@ SCENARIO("index operations", "[basic]") {
 TEST_CASE("print stack elements", "[basic]") {
     Moon::Init();
     std::string log;
-    Moon::SetLogger([&log](const auto& msg) { log = msg; });
+    std::string error;
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
 
     SECTION("print a boolean") {
         Moon::Push(true);
@@ -118,6 +140,19 @@ TEST_CASE("print stack elements", "[basic]") {
 
 SCENARIO("run code", "[basic]") {
     Moon::Init();
+    std::string log;
+    std::string error;
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("some lua code snippets") {
@@ -128,15 +163,15 @@ SCENARIO("run code", "[basic]") {
         WHEN("code runs - assert true") {
             REQUIRE(Moon::RunCode(assertTrue));
 
-            THEN("no error should occur") { REQUIRE_FALSE(Moon::HasError()); }
+            THEN("no error should occur") { REQUIRE(error.empty()); }
         }
 
         AND_WHEN("code runs - assert false") {
             REQUIRE_FALSE(Moon::RunCode(assertFalse));
 
             THEN("error should occur") {
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
+                REQUIRE_FALSE(error.empty());
+                error.clear();
             }
         }
 
@@ -144,8 +179,8 @@ SCENARIO("run code", "[basic]") {
             REQUIRE_FALSE(Moon::RunCode(faulty));
 
             THEN("error should occur") {
-                REQUIRE(Moon::HasError());
-                Moon::ClearError();
+                REQUIRE_FALSE(error.empty());
+                error.clear();
             }
         }
     }
@@ -156,8 +191,19 @@ SCENARIO("run code", "[basic]") {
 
 TEST_CASE("loading files", "[basic]") {
     Moon::Init();
+    std::string log;
     std::string error;
-    Moon::SetLogger([&error](const std::string& error_) { error = error_; });
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     REQUIRE_FALSE(Moon::LoadFile("failed.lua"));
     REQUIRE_FALSE(Moon::LoadFile("scripts/failed.lua"));
     REQUIRE(!error.empty());
@@ -414,7 +460,18 @@ double = 3.14
 SCENARIO("test multiple return getters", "[basic]") {
     Moon::Init();
     std::string log;
-    Moon::SetLogger([&log](const auto& log_) { log = log_; });
+    std::string error;
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("an empty lua stack") {
@@ -448,10 +505,9 @@ SCENARIO("test multiple return getters", "[basic]") {
 
             AND_THEN("errors are still tracked in multi return") {
                 Moon::Get<std::string, bool, double>(-1);
-                REQUIRE(Moon::HasError());
-                REQUIRE(log.find("type check failed") != log.size());
-                log.clear();
-                Moon::ClearError();
+                REQUIRE_FALSE(error.empty());
+                REQUIRE(error.find("type check failed") != error.size());
+                error.clear();
             }
 
             Moon::Pop(3);

@@ -180,6 +180,38 @@ enum class LuaType {
     Thread = LUA_TTHREAD
 };
 
+/// Logging helper class.
+class Logger {
+public:
+    /// Defines the log severity.
+    enum class Level { Info, Warning, Error };
+
+    /// Sets the callback when o log message to.
+    /// \param callback Callback to use when logging.
+    static void SetCallback(std::function<void(Level, const std::string&)> callback) { s_callback = std::move(callback); }
+
+    /// Info log.
+    /// \param message Message to log.
+    static void Info(const std::string& message) { log(Level::Info, message); }
+
+    /// Warning log.
+    /// \param message Message to log.
+    static void Warning(const std::string& message) { log(Level::Warning, message); }
+
+    /// Error log.
+    /// \param message Message to log.
+    static void Error(const std::string& message) { log(Level::Error, message); }
+
+private:
+    /// Logs a new message to callback.
+    /// \param level Level of log.
+    /// \param message Message to log.
+    static void log(Level level, const std::string& message) { s_callback(level, std::string("Moon :: ").append(message)); }
+
+    /// Called when a log occurs, receiving log severity and message.
+    static inline std::function<void(Level, const std::string&)> s_callback{};
+};
+
 /// Creates a reference of Lua object for specified index and stack in Lua registry.
 class Reference {
 public:
@@ -903,8 +935,8 @@ struct Stack {
     /// \param message Message to report.
     /// \return Void.
     template <typename... Rs>
-    static call_void_t<Rs...> ReportErrorWithReturn(const std::function<void(const std::string&)>& reporter, std::string&& message) {
-        reporter(std::forward<std::string>(message));
+    static call_void_t<Rs...> ReportErrorWithReturn(std::string&& message) {
+        Logger::Error(std::forward<std::string>(message));
     }
 
     /// Reports message to specified reporter and returns default constructed return type.
@@ -913,8 +945,8 @@ struct Stack {
     /// \param message Message to report.
     /// \return Default constructed return type.
     template <typename... Rs>
-    static call_return_t<Rs...> ReportErrorWithReturn(const std::function<void(const std::string&)>& reporter, std::string&& message) {
-        reporter(std::forward<std::string>(message));
+    static call_return_t<Rs...> ReportErrorWithReturn(std::string&& message) {
+        Logger::Error(std::forward<std::string>(message));
         return {};
     }
 
@@ -925,11 +957,11 @@ struct Stack {
     /// \param reporter Error reporter function.
     /// \return Value or default constructed type.
     template <typename... Rs>
-    static decltype(auto) Get(lua_State* L, int index, const std::function<void(const std::string&)>& reporter) {
+    static decltype(auto) Get(lua_State* L, int index) {
         try {
             return Marshalling::GetValue<meta::multi_ret_t<Rs...>>(L, index);
         } catch (const std::exception& e) {
-            return ReportErrorWithReturn<Rs...>(reporter, e.what());
+            return ReportErrorWithReturn<Rs...>(e.what());
         }
     }
 
@@ -963,12 +995,12 @@ struct Stack {
     /// \param args Arguments to call function with.
     /// \return Void.
     template <typename... Rs, typename... Args>
-    static call_void_t<Rs...> Call(lua_State* L, const std::function<void(const std::string&)>& reporter, Args&&... args) {
+    static call_void_t<Rs...> Call(lua_State* L, Args&&... args) {
         Push(L, std::forward<Args>(args)...);
         try {
             Marshalling::Call(L, meta::count_expected_v<Args...>, 0);
         } catch (const std::exception& e) {
-            reporter(e.what());
+            Logger::Error(e.what());
         }
     }
 
@@ -980,15 +1012,15 @@ struct Stack {
     /// \param args Arguments to pass to Lua function.
     /// \return Return value of Lua function.
     template <typename... Rs, typename... Args>
-    static call_return_t<Rs...> Call(lua_State* L, const std::function<void(const std::string&)>& reporter, Args&&... args) {
+    static call_return_t<Rs...> Call(lua_State* L, Args&&... args) {
         Push(L, std::forward<Args>(args)...);
         try {
             Marshalling::Call(L, meta::count_expected_v<Args...>, meta::count_expected_v<Rs...>);
         } catch (const std::exception& e) {
-            return ReportErrorWithReturn<Rs...>(reporter, e.what());
+            return ReportErrorWithReturn<Rs...>(e.what());
         }
         PopGuard guard{L, meta::count_expected_v<Rs...>};
-        return Get<Rs...>(L, -1, reporter);
+        return Get<Rs...>(L, -1);
     }
 };
 
@@ -1033,10 +1065,6 @@ public:
 
     inline bool operator!=(const Object& other) const { return !(*this == other); }
 
-    /// Error reporter setter.
-    /// \param reporter Reporter to use.
-    static inline void SetErrorReporter(const std::function<void(const std::string&)>& reporter) { s_reportError = reporter; }
-
     /// Getter for the Lua state.
     /// \return Lua state pointer.
     [[nodiscard]] inline lua_State* GetState() const { return m_state; }
@@ -1070,20 +1098,20 @@ public:
     template <typename Ret>
     Ret As() const {
         if (!IsLoaded()) {
-            return Stack::ReportErrorWithReturn<Ret>(s_reportError, "Tried to get value from an Object not loaded");
+            return Stack::ReportErrorWithReturn<Ret>("Tried to get value from an Object not loaded");
         }
         Push();
         Stack::PopGuard guard{m_state};
-        return Stack::Get<Ret>(m_state, -1, s_reportError);
+        return Stack::Get<Ret>(m_state, -1);
     }
 
     template <typename... Ret, typename... Args>
     decltype(auto) Call(Args&&... args) const {
         if (!IsLoaded()) {
-            return Stack::ReportErrorWithReturn<Ret...>(s_reportError, "Tried to call an Object not loaded");
+            return Stack::ReportErrorWithReturn<Ret...>("Tried to call an Object not loaded");
         }
         Push();
-        return Stack::Call<Ret...>(m_state, s_reportError, std::forward<Args>(args)...);
+        return Stack::Call<Ret...>(m_state, std::forward<Args>(args)...);
     }
 
     /// Tries to call object as void Lua function.
@@ -1117,8 +1145,6 @@ private:
         return luaL_ref(m_state, LUA_REGISTRYINDEX);
     }
 
-    /// Error reporter function. To be defined by wrapper.
-    inline static std::function<void(const std::string&)> s_reportError;
     /// Lua state.
     lua_State* m_state{nullptr};
 };
@@ -1164,11 +1190,6 @@ public:
         lua_pop(L, 1);
     }
 
-    static inline void SetErrorReporter(const std::function<void(const std::string&)>& reporter) { s_reportError = reporter; }
-
-protected:
-    static inline std::function<void(const std::string&)> s_reportError;
-
 private:
     static int call(lua_State* L) {
         void* storage = lua_touserdata(L, 1);
@@ -1197,13 +1218,13 @@ private:
 
     template <size_t... indices, typename RetHelper>
     static int callHelper(std::index_sequence<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
-        Stack::Push(L, func(std::forward<Args>(Stack::Get<Args>(L, indices + 1, s_reportError))...));
+        Stack::Push(L, func(std::forward<Args>(Stack::Get<Args>(L, indices + 1))...));
         return meta::count_expected_v<RetHelper>;
     }
 
     template <size_t... indices>
     static int callHelper(std::index_sequence<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
-        func(std::forward<Args>(Stack::Get<Args>(L, indices + 1, s_reportError))...);
+        func(std::forward<Args>(Stack::Get<Args>(L, indices + 1))...);
         return 0;
     }
 };
@@ -1219,11 +1240,8 @@ public:
     static void Init() {
         s_state = luaL_newstate();
         luaL_openlibs(s_state);
-        s_logger = [](const auto&) {};
-        s_error.clear();
-        moon::Object::SetErrorReporter(error);
         moon::Invokable::Register(s_state);
-        moon::Invokable::SetErrorReporter(error);
+        moon::Logger::SetCallback([](moon::Logger::Level, const std::string&) {});
     }
 
     /// Closes Lua state.
@@ -1238,22 +1256,13 @@ public:
 
     /// Set a logger callback.
     /// \param logger Callback which is gonna be called every time a log occurs.
-    static inline void SetLogger(const std::function<void(const std::string&)>& logger) { s_logger = logger; }
+    static inline void SetLogger(std::function<void(moon::Logger::Level, const std::string&)> logger) {
+        moon::Logger::SetCallback(std::move(logger));
+    }
 
     /// Getter for Lua state/stack.
     /// \return Lua state pointer.
     static inline lua_State* GetState() { return s_state; }
-
-    /// Checks if an error is stored. Every time an error occurs it is stored until manual removal.
-    /// \return Whether or not error string is empty.
-    static inline bool HasError() { return !s_error.empty(); }
-
-    /// Getter for the current stored error message.
-    /// \return Error message.
-    static inline const std::string& GetErrorMessage() { return s_error; }
-
-    /// Clears error message and state.
-    static inline void ClearError() { s_error.clear(); }
 
     /// Getter for top index in Lua stack.
     /// \return Lua stack top index.
@@ -1298,7 +1307,7 @@ public:
     }
 
     /// Logs current stack to logger.
-    static inline void LogStackDump() { s_logger(GetStackDump()); }
+    static inline void LogStackDump() { moon::Logger::Info(GetStackDump()); }
 
     /// Loads specified file script.
     /// \param filePath File path to load.
@@ -1351,7 +1360,7 @@ public:
     /// \return C object.
     template <typename... R>
     static inline decltype(auto) Get(int index = 1) {
-        return moon::Stack::Get<R...>(s_state, index, error);
+        return moon::Stack::Get<R...>(s_state, index);
     }
 
     /// Gets global Lua variable with specified name as C object.
@@ -1370,7 +1379,7 @@ public:
     /// \return String log of element.
     static std::string StackElementToStringDump(int index) {
         if (!IsValidIndex(index)) {
-            warning("Tried to print element at invalid index");
+            moon::Logger::Warning("Tried to print element at invalid index");
             return "";
         }
         index = ConvertNegativeIndex(index);
@@ -1480,7 +1489,7 @@ public:
     static void Pop(int nrOfElements = 1) {
         while (nrOfElements > 0) {
             if (GetTop() <= 0) {
-                warning("Tried to pop stack but was empty already");
+                moon::Logger::Warning("Tried to pop stack but was empty already");
                 break;
             }
             lua_pop(s_state, 1);
@@ -1518,9 +1527,9 @@ public:
         lua_getglobal(s_state, name.c_str());
         if (!lua_isfunction(s_state, -1)) {
             Pop();
-            return moon::Stack::ReportErrorWithReturn<Ret...>(error, "Tried to call a non global function");
+            return moon::Stack::ReportErrorWithReturn<Ret...>("Tried to call a non global function");
         }
-        return moon::Stack::Call<Ret...>(s_state, error, std::forward<Args>(args)...);
+        return moon::Stack::Call<Ret...>(s_state, std::forward<Args>(args)...);
     }
 
     /// Sets top of stack as a global variable.
@@ -1558,27 +1567,14 @@ private:
         if (status != LUA_OK) {
             const auto* msg = Get<const char*>(-1);
             Pop();
-            error(msg != nullptr ? msg : errMessage);
+            moon::Logger::Error(msg != nullptr ? msg : errMessage);
             return false;
         }
         return true;
     }
 
-    /// Logs a warning message.
-    static inline void warning(const std::string& message) { s_logger("Moon :: WARNING: " + message); }
-
-    /// Logs and stores an error message.
-    static void error(const std::string& message) {
-        s_error = message;
-        s_logger("Moon :: ERROR: " + message);
-    }
-
     /// Lua state with static storage.
     inline static lua_State* s_state{nullptr};
-    /// Logger callback to be defined by client.
-    inline static std::function<void(const std::string&)> s_logger;
-    /// Global error message. This is filled every time an error occurs, whether directly or by reporters. Must be manually removed.
-    inline static std::string s_error;
 };
 
 #endif

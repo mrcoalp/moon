@@ -5,6 +5,19 @@
 
 TEST_CASE("call global lua functions", "[functions]") {
     Moon::Init();
+    std::string log;
+    std::string error;
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
 
     SECTION("no arguments, no return") {
         REQUIRE(Moon::RunCode("function Test() assert(true) end"));
@@ -37,18 +50,18 @@ TEST_CASE("call global lua functions", "[functions]") {
     SECTION("call function errors") {
         BEGIN_STACK_GUARD
         Moon::Call<void>("dummy");
-        REQUIRE(Moon::HasError());
-        Moon::ClearError();
+        REQUIRE_FALSE(error.empty());
+        error.clear();
         Moon::Call<int>("dummy");
-        REQUIRE(Moon::HasError());
-        Moon::ClearError();
+        REQUIRE_FALSE(error.empty());
+        error.clear();
         Moon::Call<std::string>("dummy");
-        REQUIRE(Moon::HasError());
-        Moon::ClearError();
+        REQUIRE_FALSE(error.empty());
+        error.clear();
         END_STACK_GUARD
     }
 
-    REQUIRE_FALSE(Moon::HasError());
+    REQUIRE(error.empty());
     Moon::CloseState();
 }
 
@@ -123,6 +136,19 @@ TEST_CASE("register C++ functions, lambdas as global lua functions", "[functions
 
 SCENARIO("get lua function as C++ stl function", "[functions]") {
     Moon::Init();
+    std::string log;
+    std::string error;
+    Moon::SetLogger([&log, &error](moon::Logger::Level level, const std::string& msg) {
+        switch (level) {
+            case moon::Logger::Level::Info:
+            case moon::Logger::Level::Warning:
+                log = msg;
+                break;
+            case moon::Logger::Level::Error:
+                error = msg;
+                break;
+        }
+    });
     BEGIN_STACK_GUARD
 
     GIVEN("a set of lua functions") {
@@ -137,7 +163,7 @@ SCENARIO("get lua function as C++ stl function", "[functions]") {
 
             THEN("we should be able to call them") {
                 onUpdate(moon::LuaMap<moon::Object>{}, 2);
-                REQUIRE_FALSE(Moon::HasError());
+                REQUIRE(error.empty());
                 REQUIRE(anonymous(true, 2, "passed"));
                 auto t = tupleReturn(std::make_tuple(1, "passed", true));
                 REQUIRE(std::get<0>(t) == 1);
@@ -149,7 +175,7 @@ SCENARIO("get lua function as C++ stl function", "[functions]") {
         Moon::Pop(2);
     }
 
-    REQUIRE_FALSE(Moon::HasError());
+    REQUIRE(error.empty());
     END_STACK_GUARD
     Moon::CloseState();
 }
