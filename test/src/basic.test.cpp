@@ -7,10 +7,6 @@ TEST_CASE("initialize and close state", "[basic]") {
     REQUIRE(Moon::GetState() != nullptr);
     Moon::CloseState();
     REQUIRE(Moon::GetState() == nullptr);
-    Moon::SetState(luaL_newstate());
-    REQUIRE(Moon::GetState() != nullptr);
-    Moon::CloseState();
-    REQUIRE(Moon::GetState() == nullptr);
 }
 
 SCENARIO("index operations", "[basic]") {

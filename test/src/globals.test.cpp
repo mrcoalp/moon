@@ -31,11 +31,17 @@ return a, b, c
             auto s = Moon::Get<std::string>("string");
             auto d = Moon::Get<double>("number");
             auto b = Moon::Get<bool>("boolean");
+            std::string s2 = Moon::At("string");
+            double d2 = Moon::At("number");
+            bool b2 = Moon::At("boolean");
 
             THEN("values should match with expected") {
                 REQUIRE(s == "passed");
                 REQUIRE(d == 3.14);
                 REQUIRE(b);
+                REQUIRE(s2 == "passed");
+                REQUIRE(d2 == 3.14);
+                REQUIRE(b2);
             }
         }
 
@@ -92,6 +98,18 @@ return a, b, c
                 REQUIRE(std::get<0>(tup)[1] == 2);
                 REQUIRE(std::get<1>(tup).at("x").at("y").at("z") == 2);
                 REQUIRE(std::get<2>(tup)(true));
+            }
+        }
+
+        AND_WHEN("globals are cleared from stack") {
+            Moon::At("string").Clean();
+            Moon::At("number").Clean();
+            Moon::At("boolean").Clean();
+
+            THEN("those values should be null") {
+                REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
+                REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
+                REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
             }
         }
 
