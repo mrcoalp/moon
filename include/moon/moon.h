@@ -96,7 +96,10 @@ struct function<std::function<T>> : std::true_type {};
 }  // namespace meta_detail
 
 template <typename T, typename Ret = T>
-using is_function_t = std::enable_if_t<meta_detail::function<T>::value, Ret>;
+using is_function_t = std::enable_if_t<meta_detail::function<std::decay_t<T>>::value, Ret>;
+
+template <typename T, typename Ret = T>
+using is_not_function_t = std::enable_if_t<!meta_detail::function<std::decay_t<T>>::value, Ret>;
 
 namespace meta_detail {
 template <typename>
@@ -159,6 +162,66 @@ struct lua_call_count_arg_ret {
 /// \tparam Ts Types to count from.
 template <typename... Ts>
 constexpr size_t count_expected_v = sum_v<size_t, meta_detail::lua_call_count_arg_ret<Ts>::value...>;
+
+namespace meta_detail {
+template <typename T, typename = void>
+struct is_callable : std::is_function<std::remove_pointer_t<T>> {};
+
+template <typename T>
+struct is_callable<T, std::enable_if_t<std::is_final_v<std::decay_t<T>> && std::is_class_v<std::decay_t<T>> &&
+                                       std::is_same_v<decltype(void(&T::operator())), void>>> {};
+
+template <typename T>
+struct is_callable<
+    T, std::enable_if_t<!std::is_final_v<std::decay_t<T>> && std::is_class_v<std::decay_t<T>> && std::is_destructible_v<std::decay_t<T>>>> {
+    struct F {
+        void operator()(){};
+    };
+    struct Derived : T, F {};
+    template <typename U, U>
+    struct Check;
+
+    template <typename V>
+    static std::false_type test(Check<void (F::*)(), &V::operator()>*) {
+        return {};
+    }
+
+    template <typename>
+    static std::true_type test(...) {
+        return {};
+    }
+
+    static constexpr bool value = std::is_same_v<decltype(test<Derived>(0)), std::true_type>;
+};
+
+template <typename T>
+struct is_callable<
+    T, std::enable_if_t<!std::is_final_v<std::decay_t<T>> && std::is_class_v<std::decay_t<T>> && !std::is_destructible_v<std::decay_t<T>>>> {
+    struct F {
+        void operator()(){};
+    };
+    struct Derived : T, F {
+        ~Derived() = delete;
+    };
+    template <typename U, U>
+    struct Check;
+
+    template <typename V>
+    static std::false_type test(Check<void (F::*)(), &V::operator()>*) {
+        return {};
+    }
+
+    template <typename>
+    static std::true_type test(...) {
+        return {};
+    }
+
+    static constexpr bool value = std::is_same_v<decltype(test<Derived>(0)), std::true_type>;
+};
+}  // namespace meta_detail
+
+template <typename T>
+constexpr bool is_callable_v = meta_detail::is_callable<std::decay_t<T>>::value;
 }  // namespace meta
 
 constexpr const char* LUA_INVOKABLE_HOLDER_META_NAME{"LuaInvokableHolder"};
@@ -1267,6 +1330,59 @@ private:
         return 0;
     }
 };
+
+class Global {
+public:
+    Global(lua_State* L, std::string name) : m_state(L), m_name(std::move(name)) {}
+
+    Global(const Global&) = delete;
+
+    Global(Global&&) = delete;
+
+    template <typename T>
+    void Set(T&& value) {
+        if constexpr (meta::is_callable_v<T>) {
+            auto deduced = std::function{std::forward<T>(value)};
+            Stack::PushUserData(m_state, new InvokableSTLFunction(deduced), LUA_INVOKABLE_HOLDER_META_NAME);
+        } else {
+            Stack::Push(m_state, std::forward<T>(value));
+        }
+        lua_setglobal(m_state, m_name.c_str());
+    }
+
+    template <typename R>
+    inline decltype(auto) Get() const {
+        return Stack::Get<R>(m_state, m_name);
+    }
+
+    template <typename... Ret, typename... Args>
+    decltype(auto) Call(Args&&... args) const {
+        lua_getglobal(m_state, m_name.c_str());
+        return Stack::Call<Ret...>(m_state, std::forward<Args>(args)...);
+    }
+
+    template <typename T>
+    void operator=(T&& value) {
+        Set(std::forward<T>(value));
+    }
+
+    template <typename T>
+    operator T() const {
+        return Get<T>();
+    }
+
+    /// Tries to call object as void Lua function.
+    /// \tparam Args Arguments types.
+    /// \param args Arguments to pass to function.
+    template <typename... Args>
+    void operator()(Args&&... args) const {
+        Call<void>(std::forward<Args>(args)...);
+    }
+
+private:
+    lua_State* m_state{nullptr};
+    std::string m_name;
+};
 }  // namespace moon
 
 /// Handles all the logic related to "communication" between C++ and Lua, initializing it.
@@ -1498,6 +1614,8 @@ public:
         Push(std::forward<T>(value));
         SetGlobalVariable(name);
     }
+
+    static moon::Global At(const std::string& name) { return {s_state, name}; }
 
     /// Recursive helper method to push multiple values to Lua stack.
     /// \tparam Args Values types.

@@ -102,3 +102,60 @@ return a, b, c
     REQUIRE(logs.NoErrors());
     Moon::CloseState();
 }
+
+std::string Foo(int a, int b) { return std::to_string(a + b); }
+
+struct Bar {
+    static std::string Foo(bool passed = false) { return passed ? "passed" : "failed"; }
+};
+
+SCENARIO("push global values to Lua stack") {
+    Moon::Init();
+    std::string info, warning, error;
+    LoggerSetter logs{info, warning, error};
+    BEGIN_STACK_GUARD
+
+    GIVEN("an empty lua stack") {
+        REQUIRE(Moon::GetTop() == 0);
+
+        WHEN("some globals are pushed") {
+            Moon::At("int") = 2;
+            Moon::At("string") = "passed";
+            Moon::At("number") = 2.0;
+            Moon::At("boolean") = true;
+
+            bool b = false;
+            auto f = Moon::At("f");
+            f = [&b](bool b_) { b = b_; };
+
+            auto f2 = Moon::At("Foo");
+            f2 = Foo;
+
+            auto f3 = Moon::At("Bar");
+            f3 = Bar::Foo;
+
+            auto f4 = Moon::At("Bar");
+            f4 = &Bar::Foo;
+
+            THEN("we should be able to get values") {
+                int i = Moon::At("int");
+                REQUIRE(i == 2);
+                std::string s = Moon::At("string");
+                REQUIRE(s == "passed");
+                double d = Moon::At("number");
+                REQUIRE(d == 2.0);
+                bool b2 = Moon::At("boolean");
+                REQUIRE(b2);
+                f(true);
+                REQUIRE(b);
+                REQUIRE(f2.Call<std::string>(1, 2) == "3");
+                REQUIRE(f3.Call<std::string>(true) == "passed");
+                REQUIRE(f4.Call<std::string>(true) == "passed");
+            }
+        }
+    }
+
+    END_STACK_GUARD
+    REQUIRE(logs.NoErrors());
+    Moon::CloseState();
+}
