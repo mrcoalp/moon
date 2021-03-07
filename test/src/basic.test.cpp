@@ -323,12 +323,6 @@ TEST_CASE("push and get values, non-user types", "[basic]") {
         Moon::Pop();
     }
 
-    SECTION("push a string try to get a bool with throw") {
-        Moon::Push("not_passed");
-        REQUIRE_THROWS(moon::Marshalling::GetValue<bool>(Moon::GetState(), -1));
-        Moon::Pop();
-    }
-
     END_STACK_GUARD
     Moon::CloseState();
 }

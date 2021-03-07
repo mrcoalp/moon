@@ -130,6 +130,14 @@ constexpr bool sizeof_is_v = size == sizeof...(Ts);
 template <typename... Ts>
 using multi_ret_t = std::conditional_t<sizeof_is_v<1, Ts...>, std::tuple_element_t<0, std::tuple<Ts...>>, std::tuple<Ts...>>;
 
+/// Requires single return type and that that type is void.
+template <typename... Rs>
+using call_void_t = std::enable_if_t<meta::sizeof_is_v<1, Rs...> && meta::all_are_v<void, Rs...>, void>;
+
+/// One or more non void return types. With multiple return types, convert type to tuple.
+template <typename... Rs>
+using call_return_t = std::enable_if_t<meta::none_is_v<void, Rs...>, meta::multi_ret_t<Rs...>>;
+
 namespace meta_detail {
 template <typename T, T... elements>
 struct sum {
@@ -349,7 +357,10 @@ protected:
 namespace meta {
 template <typename T, typename Ret = T>
 using is_reference_t = std::enable_if_t<std::is_base_of_v<Reference, T>, Ret>;
-}
+
+template <typename T>
+constexpr bool is_reference_v = std::is_base_of_v<Reference, std::decay_t<T>>;
+}  // namespace meta
 
 /**
  * @brief Converts C++ class to Lua metatable.
@@ -688,14 +699,46 @@ using is_binding_t = std::enable_if_t<std::is_same_v<decltype(T::Binding), Bindi
 }
 
 template <typename T>
-struct STLFunctionSpread;
+class STLFunctionSpread;
 
 /// Abstracts interaction with Lua stack per C type. Gets and pushes values to/from Lua stack and validates types.
-class Marshalling {
+class Stack {
 public:
-#define runtime_assert(_check, _message)    \
-    if (!_check) {                          \
-        throw std::runtime_error(_message); \
+    /// Pops specified elements from lua stack when destroyed.
+    class PopGuard {
+    public:
+        /// Pops specified elements from lua stack when destroyed - ctor.
+        /// \param L Lua state to pop from.
+        /// \param elements Number of elements to pop from stack. Defaults to 1.
+        explicit PopGuard(lua_State* L, int elements = 1) : m_state(L), m_elements(elements) {}
+
+        /// Pops specified elements from lua stack when destroyed - dtor.
+        ~PopGuard() { lua_pop(m_state, m_elements); }
+
+    private:
+        /// Lua state pointer.
+        lua_State* m_state{nullptr};
+        /// Number of elements to pop.
+        int m_elements{1};
+    };
+
+    /// Reports error message and returns void.
+    /// \tparam Rs Return type.
+    /// \param message Message to report.
+    /// \return Void.
+    template <typename R>
+    static meta::call_void_t<R> DefaultReturnWithError(std::string&& message) {
+        Logger::Error(std::forward<std::string>(message));
+    }
+
+    /// Reports error message and returns default constructed return type.
+    /// \tparam R Return type.
+    /// \param message Message to report.
+    /// \return Default constructed return type.
+    template <typename R>
+    static meta::call_return_t<R> DefaultReturnWithError(std::string&& message) {
+        Logger::Error(std::forward<std::string>(message));
+        return {};
     }
 
     template <typename R>
@@ -750,25 +793,33 @@ public:
 
     template <typename R>
     static meta::is_bool_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: boolean");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: boolean");
+        }
         return lua_toboolean(L, index) != 0;
     }
 
     template <typename R>
     static meta::is_integral_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: integer");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: integer");
+        }
         return static_cast<R>(lua_tointeger(L, index));
     }
 
     template <typename R>
     static meta::is_floating_point_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: number");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: number");
+        }
         return static_cast<R>(lua_tonumber(L, index));
     }
 
     template <typename R>
     static meta::is_string_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: string");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: string");
+        }
         size_t size;
         const char* buffer = lua_tolstring(L, index, &size);
         return R{buffer, size};
@@ -776,7 +827,9 @@ public:
 
     template <typename R>
     static meta::is_c_string_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: string");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: string");
+        }
         return lua_tostring(L, index);
     }
 
@@ -787,19 +840,25 @@ public:
 
     template <typename R>
     static meta::is_pointer_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: userdata");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: userdata");
+        }
         return *static_cast<R*>(lua_touserdata(L, index));
     }
 
     template <typename R>
     static meta::is_binding_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: userdata");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: userdata");
+        }
         return *GetValue<R*>(L, index);
     }
 
     template <typename R>
     static meta::is_vector_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: table");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: table");
+        }
         ensurePositiveIndex(index, L);
         auto size = (size_t)lua_rawlen(L, index);
         R vec;
@@ -819,7 +878,9 @@ public:
 
     template <typename R>
     static meta::is_map_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: table");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: table");
+        }
         ensurePositiveIndex(index, L);
         lua_pushnil(L);
         R map;
@@ -832,7 +893,9 @@ public:
 
     template <typename R>
     static meta::is_function_t<R> GetValue(lua_State* L, int index) {
-        runtime_assert(CheckValue<R>(L, index), "Lua type check failed: function");
+        if (!CheckValue<R>(L, index)) {
+            return DefaultReturnWithError<R>("Lua type check failed: function");
+        }
         return STLFunctionSpread<R>::GetFunctor(L, index);
     }
 
@@ -842,7 +905,9 @@ public:
         constexpr size_t elements = std::tuple_size_v<R>;
         // Ensure we have a proper starting index, even when dealing with function call args
         int starting = index > 1 ? index - elements + 1 : index;
-        runtime_assert((starting > 0), "Invalid starting index when getting tuple");
+        if (starting <= 0) {
+            return DefaultReturnWithError<R>("Invalid starting index when getting tuple");
+        }
         return getTupleHelper<R>(std::make_index_sequence<elements>{}, L, starting);
     }
 
@@ -916,18 +981,8 @@ public:
         pushTupleHelper(std::make_index_sequence<std::tuple_size_v<T>>{}, L, std::forward<T>(value));
     }
 
-    static void Call(lua_State* L, int numberArgs, int numberReturns) {
-        auto error = GetError(L, lua_pcall(L, numberArgs, numberReturns, 0));
-        runtime_assert(!error.has_value(), error.value());
-    }
-
-    static std::optional<std::string> GetError(lua_State* L, int status, const char* errMessage = "") {
-        if (status != LUA_OK) {
-            const auto* msg = GetValue<const char*>(L, -1);
-            lua_pop(L, 1);
-            return std::optional<std::string>{msg != nullptr ? msg : errMessage};
-        }
-        return std::nullopt;
+    static std::optional<std::string> CallFunctionWithErrorCheck(lua_State* L, int numberArgs, int numberReturns) {
+        return checkErrorStatus(L, lua_pcall(L, numberArgs, numberReturns, 0));
     }
 
 private:
@@ -963,54 +1018,88 @@ private:
     static void pushTupleHelper(std::index_sequence<indices...>, lua_State* L, T&& value) {
         (PushValue(L, std::get<indices>(std::forward<T>(value))), ...);
     }
+
+    /// Checks for status error and retrieves error message from stack.
+    /// \param L Lua state.
+    /// \param status Status to check.
+    /// \param errMessage Default error message if none os found in stack.
+    /// \return Either null optional (when no errors occur) or error string.
+    static std::optional<std::string> checkErrorStatus(lua_State* L, int status, const char* errMessage = "") {
+        if (status != LUA_OK) {
+            const auto* msg = GetValue<const char*>(L, -1);
+            lua_pop(L, 1);
+            return std::optional<std::string>{msg != nullptr ? msg : errMessage};
+        }
+        return std::nullopt;
+    }
 };
 
-struct Stack {
-    /// Pops specified elements from lua stack when destroyed.
-    class PopGuard {
-    public:
-        /// Pops specified elements from lua stack when destroyed - ctor.
-        /// \param L Lua state to pop from.
-        /// \param elements Number of elements to pop from stack. Defaults to 1.
-        explicit PopGuard(lua_State* L, int elements = 1) : m_state(L), m_elements(elements) {}
+class Invokable {
+public:
+    virtual ~Invokable() = default;
 
-        /// Pops specified elements from lua stack when destroyed - dtor.
-        ~PopGuard() { lua_pop(m_state, m_elements); }
+    virtual int Call(lua_State*) const = 0;
 
-    private:
-        /// Lua state pointer.
-        lua_State* m_state{nullptr};
-        /// Number of elements to pop.
-        int m_elements{1};
-    };
+    static void Register(lua_State* L) {
+        luaL_newmetatable(L, LUA_INVOKABLE_HOLDER_META_NAME);
+        int metatable = lua_gettop(L);
 
-    /// Requires single return type and that that type is void.
-    template <typename... Rs>
-    using call_void_t = std::enable_if_t<meta::sizeof_is_v<1, Rs...> && meta::all_are_v<void, Rs...>, void>;
+        lua_pushstring(L, "__call");
+        lua_pushcfunction(L, &Invokable::call);
+        lua_settable(L, metatable);
 
-    /// One or more non void return types. With multiple return types, convert type to tuple.
-    template <typename... Rs>
-    using call_return_t = std::enable_if_t<meta::none_is_v<void, Rs...>, meta::multi_ret_t<Rs...>>;
+        lua_pushstring(L, "__gc");
+        lua_pushcfunction(L, &Invokable::gc);
+        lua_settable(L, metatable);
 
-    /// Reports message to specified reporter and returns void.
-    /// \tparam Rs Return types.
-    /// \param message Message to report.
-    /// \return Void.
-    template <typename... Rs>
-    static call_void_t<Rs...> ReportErrorWithReturn(std::string&& message) {
-        Logger::Error(std::forward<std::string>(message));
+        lua_pushstring(L, "__metatable");
+        lua_pushstring(L, "Access restricted");
+        lua_settable(L, metatable);
+
+        lua_pop(L, 1);
     }
 
-    /// Reports message to specified reporter and returns default constructed return type.
-    /// \tparam Rs Return types.
-    /// \param message Message to report.
-    /// \return Default constructed return type.
-    template <typename... Rs>
-    static call_return_t<Rs...> ReportErrorWithReturn(std::string&& message) {
-        Logger::Error(std::forward<std::string>(message));
-        return {};
+private:
+    static int call(lua_State* L) {
+        void* storage = lua_touserdata(L, 1);
+        auto* invokable = *static_cast<Invokable**>(storage);
+        lua_remove(L, 1);
+        return invokable->Call(L);
     }
 
+    static int gc(lua_State* L) {
+        void* storage = lua_touserdata(L, 1);
+        auto* invokable = *static_cast<Invokable**>(storage);
+        delete invokable;
+        return 0;
+    }
+};
+
+template <typename Ret, typename... Args>
+class InvokableSTLFunction : public Invokable {
+public:
+    explicit InvokableSTLFunction(std::function<Ret(Args...)> func_) : func(std::move(func_)) {}
+
+    inline int Call(lua_State* L) const final { return callHelper(std::make_index_sequence<sizeof...(Args)>{}, func, L); }
+
+private:
+    std::function<Ret(Args...)> func;
+
+    template <size_t... indices, typename RetHelper>
+    static int callHelper(std::index_sequence<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
+        Stack::PushValue(L, func(std::forward<Args>(Stack::GetValue<Args>(L, indices + 1))...));
+        return meta::count_expected_v<RetHelper>;
+    }
+
+    template <size_t... indices>
+    static int callHelper(std::index_sequence<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
+        func(std::forward<Args>(Stack::GetValue<Args>(L, indices + 1))...);
+        return 0;
+    }
+};
+
+class Core {
+public:
     /// Tries to get value/global from stack at specified index or with specific name. When failing returns default constructed type.
     /// \tparam Rs Return type. When multiple, converts to tuple.
     /// \tparam Keys Key type, either integral (index) or string (name).
@@ -1020,16 +1109,7 @@ struct Stack {
     template <typename... Rs, typename... Keys>
     static decltype(auto) Get(lua_State* L, Keys&&... keys) {
         static_assert(sizeof...(Rs) == sizeof...(Keys), "Number of returns and keys must match");
-        return meta::multi_ret_t<Rs...>(global<Rs>(L, std::forward<Keys>(keys))...);
-    }
-
-    /// Pushes values to Lua stack.
-    /// \tparam Ts Values types.
-    /// \param L Lua stack.
-    /// \param values Values to push to stack.
-    template <typename... Ts>
-    static void Push(lua_State* L, Ts&&... values) {
-        (Marshalling::PushValue(L, std::forward<Ts>(values)), ...);
+        return meta::multi_ret_t<Rs...>(get<Rs>(L, std::forward<Keys>(keys))...);
     }
 
     /// Pushes new userdata (pointer) to Lua stack.
@@ -1045,6 +1125,34 @@ struct Stack {
         lua_setmetatable(L, -2);
     }
 
+    template <typename Func>
+    static void PushFunction(lua_State* L, Func&& func) {
+        auto deduced = std::function{std::forward<Func>(func)};
+        PushUserData(L, new InvokableSTLFunction(deduced), LUA_INVOKABLE_HOLDER_META_NAME);
+    }
+
+    /// Pushes value to Lua stack.
+    /// \tparam T Value type.
+    /// \param L Lua stack.
+    /// \param value Value to push to stack.
+    template <typename T>
+    static void Push(lua_State* L, T&& value) {
+        if constexpr (!meta::is_reference_v<T> && meta::is_callable_v<T>) {
+            PushFunction(L, std::forward<T>(value));
+        } else {
+            Stack::PushValue(L, std::forward<T>(value));
+        }
+    }
+
+    /// Reports error message and returns void.
+    /// \tparam Rs Return types.
+    /// \param message Message to report.
+    /// \return Void.
+    template <typename... Rs>
+    static decltype(auto) DefaultReturnWithError(std::string&& message) {
+        return Stack::DefaultReturnWithError<meta::multi_ret_t<Rs...>>(std::forward<std::string>(message));
+    }
+
     /// Try to call object as Lua function.
     /// \tparam Rs Void return specialization.
     /// \tparam Args Arguments types.
@@ -1052,12 +1160,11 @@ struct Stack {
     /// \param args Arguments to call function with.
     /// \return Void.
     template <typename... Rs, typename... Args>
-    static call_void_t<Rs...> Call(lua_State* L, Args&&... args) {
-        Push(L, std::forward<Args>(args)...);
-        try {
-            Marshalling::Call(L, meta::count_expected_v<Args...>, 0);
-        } catch (const std::exception& e) {
-            Logger::Error(e.what());
+    static meta::call_void_t<Rs...> Call(lua_State* L, Args&&... args) {
+        (Push(L, std::forward<Args>(args)), ...);
+        auto check = Stack::CallFunctionWithErrorCheck(L, meta::count_expected_v<Args...>, 0);
+        if (check.has_value()) {
+            return DefaultReturnWithError<Rs...>(std::forward<std::string>(check.value()));
         }
     }
 
@@ -1068,15 +1175,14 @@ struct Stack {
     /// \param args Arguments to pass to Lua function.
     /// \return Return value of Lua function.
     template <typename... Rs, typename... Args>
-    static call_return_t<Rs...> Call(lua_State* L, Args&&... args) {
-        Push(L, std::forward<Args>(args)...);
-        try {
-            Marshalling::Call(L, meta::count_expected_v<Args...>, meta::count_expected_v<Rs...>);
-        } catch (const std::exception& e) {
-            return ReportErrorWithReturn<Rs...>(e.what());
+    static meta::call_return_t<Rs...> Call(lua_State* L, Args&&... args) {
+        (Push(L, std::forward<Args>(args)), ...);
+        auto check = Stack::CallFunctionWithErrorCheck(L, meta::count_expected_v<Args...>, meta::count_expected_v<Rs...>);
+        if (check.has_value()) {
+            return DefaultReturnWithError<Rs...>(std::forward<std::string>(check.value()));
         }
-        PopGuard guard{L, meta::count_expected_v<Rs...>};
-        return global<meta::multi_ret_t<Rs...>>(L, -1);
+        Stack::PopGuard guard{L, meta::count_expected_v<Rs...>};
+        return get<meta::multi_ret_t<Rs...>>(L, -1);
     }
 
 private:
@@ -1087,10 +1193,10 @@ private:
     /// \param key Global name.
     /// \return C value.
     template <typename R, typename Key>
-    static meta::is_string_t<Key, R> global(lua_State* L, Key&& key) {
+    static meta::is_string_t<Key, R> get(lua_State* L, Key&& key) {
         lua_getglobal(L, key.c_str());
-        moon::Stack::PopGuard guard{L};
-        return global<R>(L, -1);
+        Stack::PopGuard guard{L};
+        return get<R>(L, -1);
     }
 
     /// Tries to get global with specified key name.
@@ -1100,10 +1206,10 @@ private:
     /// \param key Global name.
     /// \return C value.
     template <typename R, typename Key>
-    static meta::is_c_string_t<Key, R> global(lua_State* L, Key&& key) {
+    static meta::is_c_string_t<Key, R> get(lua_State* L, Key&& key) {
         lua_getglobal(L, key);
-        moon::Stack::PopGuard guard{L};
-        return global<R>(L, -1);
+        Stack::PopGuard guard{L};
+        return get<R>(L, -1);
     }
 
     /// Tries to get global at specified key index.
@@ -1113,12 +1219,8 @@ private:
     /// \param key Global index in stack.
     /// \return C value.
     template <typename R, typename Key>
-    static meta::is_integral_t<Key, R> global(lua_State* L, Key&& key) {
-        try {
-            return Marshalling::GetValue<R>(L, key);
-        } catch (const std::exception& e) {
-            return ReportErrorWithReturn<R>(e.what());
-        }
+    static meta::is_integral_t<Key, R> get(lua_State* L, Key&& key) {
+        return Stack::GetValue<R>(L, key);
     }
 };
 
@@ -1187,7 +1289,7 @@ public:
         }
         Push();
         Stack::PopGuard guard{m_state};
-        return Marshalling::CheckValue<T>(m_state, -1);
+        return Stack::CheckValue<T>(m_state, -1);
     }
 
     /// Get object as specified C type.
@@ -1196,20 +1298,20 @@ public:
     template <typename Ret>
     Ret As() const {
         if (!IsLoaded()) {
-            return Stack::ReportErrorWithReturn<Ret>("Tried to get value from an Object not loaded");
+            return Core::DefaultReturnWithError<Ret>("Tried to get value from an Object not loaded");
         }
         Push();
         Stack::PopGuard guard{m_state};
-        return Stack::Get<Ret>(m_state, -1);
+        return Core::Get<Ret>(m_state, -1);
     }
 
     template <typename... Ret, typename... Args>
     decltype(auto) Call(Args&&... args) const {
         if (!IsLoaded()) {
-            return Stack::ReportErrorWithReturn<Ret...>("Tried to call an Object not loaded");
+            return Core::DefaultReturnWithError<Ret...>("Tried to call an Object not loaded");
         }
         Push();
-        return Stack::Call<Ret...>(m_state, std::forward<Args>(args)...);
+        return Core::Call<Ret...>(m_state, std::forward<Args>(args)...);
     }
 
     /// Tries to call object as void Lua function.
@@ -1256,7 +1358,8 @@ private:
 /// \tparam Ret Return type of function.
 /// \tparam Args Arguments type of function.
 template <typename Ret, typename... Args>
-struct STLFunctionSpread<std::function<Ret(Args...)>> {
+class STLFunctionSpread<std::function<Ret(Args...)>> {
+public:
     /// Returns functor that holds callable moon object with specified return and argument types.
     /// \param L Lua stack.
     /// \param index Index in Lua stack to get function from.
@@ -1264,70 +1367,6 @@ struct STLFunctionSpread<std::function<Ret(Args...)>> {
     static std::function<Ret(Args...)> GetFunctor(lua_State* L, int index) {
         Object obj(L, index);
         return [obj](Args&&... args) { return obj.Call<Ret>(std::forward<Args>(args)...); };
-    }
-};
-
-class Invokable {
-public:
-    virtual ~Invokable() = default;
-
-    virtual int Call(lua_State*) const = 0;
-
-    static void Register(lua_State* L) {
-        luaL_newmetatable(L, LUA_INVOKABLE_HOLDER_META_NAME);
-        int metatable = lua_gettop(L);
-
-        lua_pushstring(L, "__call");
-        lua_pushcfunction(L, &Invokable::call);
-        lua_settable(L, metatable);
-
-        lua_pushstring(L, "__gc");
-        lua_pushcfunction(L, &Invokable::gc);
-        lua_settable(L, metatable);
-
-        lua_pushstring(L, "__metatable");
-        lua_pushstring(L, "Access restricted");
-        lua_settable(L, metatable);
-
-        lua_pop(L, 1);
-    }
-
-private:
-    static int call(lua_State* L) {
-        void* storage = lua_touserdata(L, 1);
-        auto* invokable = *static_cast<Invokable**>(storage);
-        lua_remove(L, 1);
-        return invokable->Call(L);
-    }
-
-    static int gc(lua_State* L) {
-        void* storage = lua_touserdata(L, 1);
-        auto* invokable = *static_cast<Invokable**>(storage);
-        delete invokable;
-        return 0;
-    }
-};
-
-template <typename Ret, typename... Args>
-class InvokableSTLFunction : public Invokable {
-public:
-    explicit InvokableSTLFunction(std::function<Ret(Args...)> func_) : func(std::move(func_)) {}
-
-    inline int Call(lua_State* L) const final { return callHelper(std::make_index_sequence<sizeof...(Args)>{}, func, L); }
-
-private:
-    std::function<Ret(Args...)> func;
-
-    template <size_t... indices, typename RetHelper>
-    static int callHelper(std::index_sequence<indices...>, const std::function<RetHelper(Args...)>& func, lua_State* L) {
-        Stack::Push(L, func(std::forward<Args>(Stack::Get<Args>(L, indices + 1))...));
-        return meta::count_expected_v<RetHelper>;
-    }
-
-    template <size_t... indices>
-    static int callHelper(std::index_sequence<indices...>, const std::function<void(Args...)>& func, lua_State* L) {
-        func(std::forward<Args>(Stack::Get<Args>(L, indices + 1))...);
-        return 0;
     }
 };
 
@@ -1341,24 +1380,19 @@ public:
 
     template <typename T>
     void Set(T&& value) {
-        if constexpr (meta::is_callable_v<T>) {
-            auto deduced = std::function{std::forward<T>(value)};
-            Stack::PushUserData(m_state, new InvokableSTLFunction(deduced), LUA_INVOKABLE_HOLDER_META_NAME);
-        } else {
-            Stack::Push(m_state, std::forward<T>(value));
-        }
+        Core::Push(m_state, std::forward<T>(value));
         lua_setglobal(m_state, m_name.c_str());
     }
 
     template <typename R>
     inline decltype(auto) Get() const {
-        return Stack::Get<R>(m_state, m_name);
+        return Core::Get<R>(m_state, m_name);
     }
 
     template <typename... Ret, typename... Args>
     decltype(auto) Call(Args&&... args) const {
         lua_getglobal(m_state, m_name.c_str());
-        return Stack::Call<Ret...>(m_state, std::forward<Args>(args)...);
+        return Core::Call<Ret...>(m_state, std::forward<Args>(args)...);
     }
 
     template <typename T>
@@ -1448,22 +1482,6 @@ public:
         return GetTop() + index + 1;
     }
 
-    /// Returns current Lua stack as string. Tries to show values when possible or types otherwise.
-    /// \return String containing all current Lua stack elements.
-    static std::string GetStackDump() {
-        int top = GetTop();
-        std::stringstream dump;
-        dump << "***** LUA STACK *****" << std::endl;
-        for (int i = 1; i <= top; ++i) {
-            int invertedIndex = top - i + 1;
-            dump << i << " (-" << invertedIndex << ") => " << StackElementToStringDump(i) << std::endl;
-        }
-        return dump.str();
-    }
-
-    /// Logs current stack to logger.
-    static inline void LogStackDump() { moon::Logger::Info(GetStackDump()); }
-
     /// Loads specified file script.
     /// \param filePath File path to load.
     /// \return Whether or not file was successfully loaded.
@@ -1495,7 +1513,7 @@ public:
     /// \return Whether or not it can.
     template <typename T>
     static inline bool Check(int index = 1) {
-        return moon::Marshalling::CheckValue<T>(s_state, index);
+        return moon::Stack::CheckValue<T>(s_state, index);
     }
 
     /// Checks if global with specified name can be used as specified C type.
@@ -1516,8 +1534,115 @@ public:
     /// \return C object.
     template <typename... Rs, typename... Keys>
     static inline decltype(auto) Get(Keys&&... keys) {
-        return moon::Stack::Get<Rs...>(s_state, std::forward<Keys>(keys)...);
+        return moon::Core::Get<Rs...>(s_state, std::forward<Keys>(keys)...);
     }
+
+    /// Push value to Lua stack.
+    /// \tparam T Value type.
+    /// \param value Value pushed to Lua stack.
+    template <typename T>
+    static inline void Push(T&& value) {
+        moon::Core::Push(s_state, std::forward<T>(value));
+    }
+
+    /// Push global variable to Lua stack.
+    /// \tparam T Value type.
+    /// \param name Variable name.
+    /// \param value Value pushed to Lua stack.
+    template <typename T>
+    static void Push(const std::string& name, T&& value) {
+        Push(std::forward<T>(value));
+        SetGlobalVariable(name);
+    }
+
+    static moon::Global At(const std::string& name) { return {s_state, name}; }
+
+    /// Recursive helper method to push multiple values to Lua stack.
+    /// \tparam Args Values types.
+    /// \param args Values to push to Lua stack.
+    template <typename... Args>
+    static void PushValues(Args&&... args) {
+        (Push(std::forward<Args>(args)), ...);
+    }
+
+    /// Push a nil (null) value to Lua stack.
+    static inline void PushNull() { lua_pushnil(s_state); }
+
+    /// Pushes a new empty table/map to stack.
+    static inline void PushTable() { lua_newtable(s_state); }
+
+    /// Tries to pop specified number of elements from stack. Logs an error if top is reached not popping any more.
+    /// \param nrOfElements Number of elements to pop from Lua stack.
+    static void Pop(int nrOfElements = 1) {
+        while (nrOfElements > 0) {
+            if (GetTop() <= 0) {
+                moon::Logger::Warning("Tried to pop stack but was empty already");
+                break;
+            }
+            lua_pop(s_state, 1);
+            --nrOfElements;
+        }
+    }
+
+    /// Registers and exposes C++ class to Lua.
+    /// \tparam T Class to be registered.
+    /// \param nameSpace Class namespace.
+    template <class T>
+    static inline void RegisterClass(const char* nameSpace = nullptr) {
+        moon::LuaClass<T>::Register(s_state, nameSpace);
+    }
+
+    /// Registers and exposes C++ function to Lua.
+    /// \tparam Func Function type.
+    /// \param name Function name to register in Lua.
+    /// \param func Function to register.
+    template <typename Func>
+    static void RegisterFunction(const std::string& name, Func&& func) {
+        moon::Core::PushFunction(s_state, std::forward<Func>(func));
+        SetGlobalVariable(name);
+    }
+
+    /// Calls a global Lua function.
+    /// \tparam Ret Return types.
+    /// \tparam Args Argument types.
+    /// \param name Global function name.
+    /// \param args Arguments to call function with.
+    /// \return Return value of function.
+    template <typename... Ret, typename... Args>
+    static decltype(auto) Call(const std::string& name, Args&&... args) {
+        lua_getglobal(s_state, name.c_str());
+        if (!lua_isfunction(s_state, -1)) {
+            Pop();
+            return moon::Core::DefaultReturnWithError<Ret...>("Tried to call a non global function");
+        }
+        return moon::Core::Call<Ret...>(s_state, std::forward<Args>(args)...);
+    }
+
+    /// Sets top of stack as a global variable.
+    /// \param name Name of the variable to set.
+    static void SetGlobalVariable(const std::string& name) { lua_setglobal(s_state, name.c_str()); }
+
+    /// Cleans/nulls a global variable.
+    /// \param name Variable to clean.
+    static void CleanGlobalVariable(const std::string& name) {
+        PushNull();
+        SetGlobalVariable(name);
+    }
+
+    /// Make moon object directly in Lua stack from C object. Stack is immediately popped, since the reference is stored.
+    /// \tparam T C object type.
+    /// \param value C object.
+    /// \return Newly created moon object.
+    template <typename T>
+    static moon::Object MakeObject(T&& value) {
+        Push(value);
+        return moon::Object::CreateAndPop(s_state);
+    }
+
+    /// Creates and stores a new ref of element at provided index.
+    /// \param index Index of element to create ref. Defaults to top of stack.
+    /// \return A new moon Object.
+    static moon::Object MakeObjectFromIndex(int index = -1) { return {s_state, index}; }
 
     /// Prints element at specified index. Shows value when possible or type otherwise.
     /// \param index Index in stack to print.
@@ -1587,6 +1712,22 @@ public:
         }
     }
 
+    /// Returns current Lua stack as string. Tries to show values when possible or types otherwise.
+    /// \return String containing all current Lua stack elements.
+    static std::string GetStackDump() {
+        int top = GetTop();
+        std::stringstream dump;
+        dump << "***** LUA STACK *****" << std::endl;
+        for (int i = 1; i <= top; ++i) {
+            int invertedIndex = top - i + 1;
+            dump << i << " (-" << invertedIndex << ") => " << StackElementToStringDump(i) << std::endl;
+        }
+        return dump.str();
+    }
+
+    /// Logs current stack to logger.
+    static inline void LogStackDump() { moon::Logger::Info(GetStackDump()); }
+
     /// Ensures that a given LuaMap contains all desired keys. Useful, since maps obtained from lua are dynamic.
     /// \tparam T LuaMap type.
     /// \param keys Keys to check in map.
@@ -1596,114 +1737,6 @@ public:
     static inline bool EnsureMapKeys(const std::vector<std::string>& keys, const moon::LuaMap<T>& map) {
         return std::all_of(keys.cbegin(), keys.cend(), [&map](const std::string& key) { return map.find(key) != map.cend(); });
     }
-
-    /// Push value to Lua stack.
-    /// \tparam T Value type.
-    /// \param value Value pushed to Lua stack.
-    template <typename T>
-    static inline void Push(T&& value) {
-        moon::Stack::Push(s_state, std::forward<T>(value));
-    }
-
-    /// Push global variable to Lua stack.
-    /// \tparam T Value type.
-    /// \param name Variable name.
-    /// \param value Value pushed to Lua stack.
-    template <typename T>
-    static void Push(const std::string& name, T&& value) {
-        Push(std::forward<T>(value));
-        SetGlobalVariable(name);
-    }
-
-    static moon::Global At(const std::string& name) { return {s_state, name}; }
-
-    /// Recursive helper method to push multiple values to Lua stack.
-    /// \tparam Args Values types.
-    /// \param args Values to push to Lua stack.
-    template <typename... Args>
-    static void PushValues(Args&&... args) {
-        (Push(std::forward<Args>(args)), ...);
-    }
-
-    /// Push a nil (null) value to Lua stack.
-    static inline void PushNull() { lua_pushnil(s_state); }
-
-    /// Pushes a new empty table/map to stack.
-    static inline void PushTable() { lua_newtable(s_state); }
-
-    /// Tries to pop specified number of elements from stack. Logs an error if top is reached not popping any more.
-    /// \param nrOfElements Number of elements to pop from Lua stack.
-    static void Pop(int nrOfElements = 1) {
-        while (nrOfElements > 0) {
-            if (GetTop() <= 0) {
-                moon::Logger::Warning("Tried to pop stack but was empty already");
-                break;
-            }
-            lua_pop(s_state, 1);
-            --nrOfElements;
-        }
-    }
-
-    /// Registers and exposes C++ class to Lua.
-    /// \tparam T Class to be registered.
-    /// \param nameSpace Class namespace.
-    template <class T>
-    static inline void RegisterClass(const char* nameSpace = nullptr) {
-        moon::LuaClass<T>::Register(s_state, nameSpace);
-    }
-
-    /// Registers and exposes C++ function to Lua.
-    /// \tparam Func Function type.
-    /// \param name Function name to register in Lua.
-    /// \param func Function to register.
-    template <typename Func>
-    static void RegisterFunction(const std::string& name, Func&& func) {
-        auto deducedFunc = std::function{std::forward<Func>(func)};
-        moon::Stack::PushUserData(s_state, new moon::InvokableSTLFunction(deducedFunc), moon::LUA_INVOKABLE_HOLDER_META_NAME);
-        SetGlobalVariable(name);
-    }
-
-    /// Calls a global Lua function.
-    /// \tparam Ret Return types.
-    /// \tparam Args Argument types.
-    /// \param name Global function name.
-    /// \param args Arguments to call function with.
-    /// \return Return value of function.
-    template <typename... Ret, typename... Args>
-    static decltype(auto) Call(const std::string& name, Args&&... args) {
-        lua_getglobal(s_state, name.c_str());
-        if (!lua_isfunction(s_state, -1)) {
-            Pop();
-            return moon::Stack::ReportErrorWithReturn<Ret...>("Tried to call a non global function");
-        }
-        return moon::Stack::Call<Ret...>(s_state, std::forward<Args>(args)...);
-    }
-
-    /// Sets top of stack as a global variable.
-    /// \param name Name of the variable to set.
-    static void SetGlobalVariable(const std::string& name) { lua_setglobal(s_state, name.c_str()); }
-
-    /// Cleans/nulls a global variable.
-    /// \param name Variable to clean.
-    static void CleanGlobalVariable(const std::string& name) {
-        PushNull();
-        SetGlobalVariable(name);
-    }
-
-    /// Make moon object directly in Lua stack from C object. Stack is immediately popped, since the reference is stored.
-    /// \tparam T C object type.
-    /// \param value C object.
-    /// \return Newly created moon object.
-    template <typename T>
-    static moon::Object MakeObject(T&& value) {
-        Push(value);
-        return moon::Object::CreateAndPop(s_state);
-    }
-
-    /// Creates and stores a new ref of element at provided index.
-    /// \param index Index of element to create ref. Defaults to top of stack.
-    /// \return A new moon Object.
-    static moon::Object MakeObjectFromIndex(int index = -1) { return {s_state, index}; }
 
 private:
     /// Checks for lua status and returns if ok or not.

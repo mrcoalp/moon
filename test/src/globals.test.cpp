@@ -2,7 +2,7 @@
 
 #include "helpers.h"
 
-SCENARIO("get global values from Lua stack") {
+SCENARIO("get global values from Lua stack", "[basic][global]") {
     Moon::Init();
     std::string info;
     std::string warning;
@@ -109,7 +109,7 @@ struct Bar {
     static std::string Foo(bool passed = false) { return passed ? "passed" : "failed"; }
 };
 
-SCENARIO("push global values to Lua stack") {
+SCENARIO("push global values to Lua stack", "[basic][global]") {
     Moon::Init();
     std::string info, warning, error;
     LoggerSetter logs{info, warning, error};
@@ -123,21 +123,25 @@ SCENARIO("push global values to Lua stack") {
             Moon::At("string") = "passed";
             Moon::At("number") = 2.0;
             Moon::At("boolean") = true;
-
+            Moon::At("array") = std::vector<int>{1, 2, 3};
+            Moon::At("map") = std::map<std::string, int>{{"x", 1}, {"y", 2}};
             bool b = false;
-            auto f = Moon::At("f");
-            f = [&b](bool b_) { b = b_; };
+            Moon::At("f") = [&b](bool b_) { b = b_; };
+            Moon::At("Foo") = Foo;
+            Moon::At("BarFoo") = Bar::Foo;
 
-            auto f2 = Moon::At("Foo");
-            f2 = Foo;
+            THEN("globals should be available in Lua") {
+                REQUIRE(Moon::RunCode("assert(int == 2)"));
+                REQUIRE(Moon::RunCode("assert(string == 'passed')"));
+                REQUIRE(Moon::RunCode("assert(number == 2.0)"));
+                REQUIRE(Moon::RunCode("assert(boolean)"));
+                REQUIRE(Moon::RunCode("f(true)"));
+                REQUIRE(b);
+                REQUIRE(Moon::RunCode("assert(Foo(1, 2) == '3')"));
+                REQUIRE(Moon::RunCode("assert(BarFoo(true) == 'passed')"));
+            }
 
-            auto f3 = Moon::At("Bar");
-            f3 = Bar::Foo;
-
-            auto f4 = Moon::At("Bar");
-            f4 = &Bar::Foo;
-
-            THEN("we should be able to get values") {
+            AND_THEN("we should be able to get globals") {
                 int i = Moon::At("int");
                 REQUIRE(i == 2);
                 std::string s = Moon::At("string");
@@ -146,11 +150,35 @@ SCENARIO("push global values to Lua stack") {
                 REQUIRE(d == 2.0);
                 bool b2 = Moon::At("boolean");
                 REQUIRE(b2);
-                f(true);
+                std::vector<int> vec = Moon::At("array");
+                REQUIRE(vec[1] == 2);
+                std::map<std::string, int> map = Moon::At("map");
+                REQUIRE(map.at("x") == 1);
+                Moon::At("f")(true);
                 REQUIRE(b);
-                REQUIRE(f2.Call<std::string>(1, 2) == "3");
-                REQUIRE(f3.Call<std::string>(true) == "passed");
-                REQUIRE(f4.Call<std::string>(true) == "passed");
+                REQUIRE(Moon::At("Foo").Call<std::string>(1, 2) == "3");
+                REQUIRE(Moon::At("BarFoo").Call<std::string>(true) == "passed");
+            }
+
+            AND_THEN("we can get trivial and container global values from keys") {
+                REQUIRE(Moon::Get<int>("int") == 2);
+                REQUIRE(Moon::Get<std::string>("string") == "passed");
+                REQUIRE(Moon::Get<double>("number") == 2.0);
+                REQUIRE(Moon::Get<bool>("boolean"));
+                REQUIRE(Moon::Get<std::vector<int>>("array")[1] == 2);
+                REQUIRE(Moon::Get<std::map<std::string, int>>("map").at("y") == 2);
+            }
+
+            AND_THEN("we should not be able to get Lua global registered C functions back as function, for memory safety reasons") {
+                auto f = Moon::Get<std::function<void(bool)>>("f");
+                REQUIRE(logs.ErrorCheck());
+                auto f2 = Moon::Get<std::function<std::string(int, int)>>("Foo");
+                REQUIRE(logs.ErrorCheck());
+                auto f3 = Moon::Get<std::function<std::string(bool)>>("BarFoo");
+                REQUIRE(logs.ErrorCheck());
+                REQUIRE_FALSE(f);
+                REQUIRE_FALSE(f2);
+                REQUIRE_FALSE(f3);
             }
         }
     }
