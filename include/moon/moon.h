@@ -1106,6 +1106,16 @@ public:
         return meta::multi_ret_t<Rets...>(get<Rets>(L, std::forward<Keys>(keys))...);
     }
 
+    /// Set one or multiple pairs of name/value globals.
+    /// \tparam Pairs Name/Value pair types.
+    /// \param L Lua state.
+    /// \param pairs Name/value global pair.
+    template <typename... Pairs>
+    static void Set(lua_State* L, Pairs&&... pairs) {
+        static_assert(sizeof...(Pairs) % 2 == 0, "pushing globals only works with name/value pairs");
+        setPairs(std::make_index_sequence<sizeof...(Pairs) / 2>{}, L, std::forward_as_tuple(std::forward<Pairs>(pairs)...));
+    }
+
     /// Pushes new userdata (pointer) to Lua stack.
     /// \tparam T User data type.
     /// \param L Lua stack.
@@ -1205,7 +1215,7 @@ private:
     /// \return C value.
     template <typename Ret, typename Key>
     static meta::is_c_string_t<Key, Ret> get(lua_State* L, Key&& key) {
-        lua_getglobal(L, key);
+        lua_getglobal(L, std::forward<Key>(key));
         Stack::PopGuard guard{L};
         return get<Ret>(L, -1);
     }
@@ -1218,7 +1228,29 @@ private:
     /// \return C value.
     template <typename R, typename Key>
     static meta::is_integral_t<Key, R> get(lua_State* L, Key&& key) {
-        return Stack::GetValue<R>(L, key);
+        return Stack::GetValue<R>(L, std::forward<Key>(key));
+    }
+
+    /// Sets a new global variable in Lua.
+    /// \tparam Name Type of name.
+    /// \tparam T Value type.
+    /// \param L Lua state.
+    /// \param name Name of variable to set.
+    /// \param value Value to set variable with.
+    template <typename Name, typename T>
+    static void set(lua_State* L, Name&& name, T&& value) {
+        Push(L, std::forward<T>(value));
+        lua_setglobal(L, std::forward<Name>(name));
+    }
+
+    /// Helper method to set multiple pairs of name/value global variables in Lua.
+    /// \tparam indices Number of pairs to set.
+    /// \tparam Pairs Pair type
+    /// \param L Lua state.
+    /// \param pairs Pairs to set.
+    template <size_t... indices, typename Pairs>
+    static void setPairs(std::index_sequence<indices...>, lua_State* L, Pairs&& pairs) {
+        (set(L, std::get<indices * 2>(std::forward<Pairs>(pairs)), std::get<indices * 2 + 1>(std::forward<Pairs>(pairs))), ...);
     }
 };
 
@@ -1296,7 +1328,7 @@ public:
     template <typename Ret>
     Ret As() const {
         if (!IsLoaded()) {
-            return Core::DefaultReturnWithError<Ret>("Tried to get value from an Object not loaded");
+            return Core::DefaultReturnWithError<Ret>("tried to get value from an Object not loaded");
         }
         Push();
         Stack::PopGuard guard{m_state};
@@ -1311,7 +1343,7 @@ public:
     template <typename... Rets, typename... Args>
     decltype(auto) Call(Args&&... args) const {
         if (!IsLoaded()) {
-            return Core::DefaultReturnWithError<Rets...>("Tried to call an Object not loaded");
+            return Core::DefaultReturnWithError<Rets...>("tried to call an Object not loaded");
         }
         Push();
         return Core::Call<Rets...>(m_state, std::forward<Args>(args)...);
@@ -1582,6 +1614,15 @@ public:
         return moon::Core::Get<Rets...>(s_state, std::forward<Keys>(keys)...);
     }
 
+    /// Sets or multiple pairs name/value global in Lua.
+    /// \tparam Pairs Pair(s) type(s).
+    /// \param pairs Name and value pair to set.
+    /// \example Set("first", 1, "second", true,...)
+    template <typename... Pairs>
+    static inline void Set(Pairs&&... pairs) {
+        moon::Core::Set(s_state, std::forward<Pairs>(pairs)...);
+    }
+
     /// Push value to Lua stack.
     /// \tparam T Value type.
     /// \param value Value pushed to Lua stack.
@@ -1659,10 +1700,6 @@ public:
     template <typename... Ret, typename... Args>
     static decltype(auto) Call(const std::string& name, Args&&... args) {
         lua_getglobal(s_state, name.c_str());
-        if (!lua_isfunction(s_state, -1)) {
-            Pop();
-            return moon::Core::DefaultReturnWithError<Ret...>("Tried to call a non global function");
-        }
         return moon::Core::Call<Ret...>(s_state, std::forward<Args>(args)...);
     }
 
