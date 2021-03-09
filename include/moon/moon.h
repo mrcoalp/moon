@@ -56,8 +56,14 @@ using is_floating_point_t = std::enable_if_t<std::is_floating_point_v<std::decay
 template <typename T, typename Ret = T>
 using is_string_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, std::string>, Ret>;
 
+template <typename T>
+constexpr bool is_string_v = std::is_same_v<std::decay_t<T>, std::string>;
+
 template <typename T, typename Ret = T>
 using is_c_string_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, const char*>, Ret>;
+
+template <typename T>
+constexpr bool is_c_string_v = std::is_same_v<std::decay_t<T>, const char*>;
 
 template <typename T, typename Ret = T>
 using is_pointer_t = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
@@ -1094,6 +1100,27 @@ private:
 
 class Core {
 public:
+    /// Get type of Lua value at index in stack or with specific name.
+    /// \tparam Key Type of key (integer/string).
+    /// \param L Lua state.
+    /// \param key Key to check type of.
+    /// \return Moon type of value.
+    template <typename Key>
+    static LuaType GetType(lua_State* L, Key&& key) {
+        return type(L, std::forward<Key>(key));
+    }
+
+    /// Checks if Lua value in index/name can be interpreted as specified C type.
+    /// \tparam T C type to check.
+    /// \tparam Key Type of key (integer/string).
+    /// \param L Lua state.
+    /// \param key Key to check. Either index or global name.
+    /// \return Whether or not value can be interpreted at specific type.
+    template <typename T, typename Key>
+    static bool Check(lua_State* L, Key&& key) {
+        return check<T>(L, std::forward<Key>(key));
+    }
+
     /// Tries to get value/global from stack at specified index or with specific name. When failing returns default constructed type.
     /// \tparam Rets Return type. When multiple, converts to tuple.
     /// \tparam Keys Key type, either integral (index) or string (name).
@@ -1102,7 +1129,7 @@ public:
     /// \return Type or tuple of types with values.
     template <typename... Rets, typename... Keys>
     static decltype(auto) Get(lua_State* L, Keys&&... keys) {
-        static_assert(sizeof...(Rets) == sizeof...(Keys), "Number of returns and keys must match");
+        static_assert(sizeof...(Rets) == sizeof...(Keys), "number of returns and keys must match");
         return meta::multi_ret_t<Rets...>(get<Rets>(L, std::forward<Keys>(keys))...);
     }
 
@@ -1194,17 +1221,50 @@ public:
     }
 
 private:
-    /// Tries to get global with specified key name.
-    /// \tparam Ret Return type of values.
-    /// \tparam Key Global key type (string).
+    /// Overload method to get type of global value with specified name in Lua.
+    /// \tparam Key Key type.
     /// \param L Lua state.
-    /// \param key Global name.
-    /// \return C value.
-    template <typename Ret, typename Key>
-    static meta::is_string_t<Key, Ret> get(lua_State* L, Key&& key) {
-        lua_getglobal(L, key.c_str());
+    /// \param key Key to check. Either index or global name.
+    /// \return Moon type.
+    template <typename Key>
+    static std::enable_if_t<meta::is_string_v<Key> || meta::is_c_string_v<Key>, LuaType> type(lua_State* L, Key&& key) {
+        lua_getglobal(L, &key[0]);
         Stack::PopGuard guard{L};
-        return get<Ret>(L, -1);
+        return type(L, -1);
+    }
+
+    /// Overload method to get type of value at specified index in Lua stack.
+    /// \tparam Key Key type.
+    /// \param L Lua state.
+    /// \param key Key to check. Either index or global name.
+    /// \return Moon type.
+    template <typename Key>
+    static inline meta::is_integral_t<Key, LuaType> type(lua_State* L, Key&& key) {
+        return static_cast<LuaType>(lua_type(L, std::forward<Key>(key)));
+    }
+
+    /// Overload method to check if Lua global with specified name can be interpreted as specified C type.
+    /// \tparam T C type to check.
+    /// \tparam Key Type of key (integer/string).
+    /// \param L Lua state.
+    /// \param key Key to check. Either index or global name.
+    /// \return Whether or not value can be interpreted at specific type.
+    template <typename T, typename Key>
+    static std::enable_if_t<meta::is_string_v<Key> || meta::is_c_string_v<Key>, bool> check(lua_State* L, Key&& key) {
+        lua_getglobal(L, &key[0]);
+        Stack::PopGuard guard{L};
+        return check<T>(L, -1);
+    }
+
+    /// Overload method to check if Lua value at index can be interpreted as specified C type.
+    /// \tparam T C type to check.
+    /// \tparam Key Type of key (integer/string).
+    /// \param L Lua state.
+    /// \param key Key to check. Either index or global name.
+    /// \return Whether or not value can be interpreted at specific type.
+    template <typename T, typename Key>
+    static inline meta::is_integral_t<Key, bool> check(lua_State* L, Key&& key) {
+        return Stack::CheckValue<T>(L, std::forward<Key>(key));
     }
 
     /// Tries to get global with specified key name.
@@ -1214,8 +1274,8 @@ private:
     /// \param key Global name.
     /// \return C value.
     template <typename Ret, typename Key>
-    static meta::is_c_string_t<Key, Ret> get(lua_State* L, Key&& key) {
-        lua_getglobal(L, std::forward<Key>(key));
+    static std::enable_if_t<meta::is_string_v<Key> || meta::is_c_string_v<Key>, Ret> get(lua_State* L, Key&& key) {
+        lua_getglobal(L, &key[0]);
         Stack::PopGuard guard{L};
         return get<Ret>(L, -1);
     }
@@ -1227,7 +1287,7 @@ private:
     /// \param key Global index in stack.
     /// \return C value.
     template <typename R, typename Key>
-    static meta::is_integral_t<Key, R> get(lua_State* L, Key&& key) {
+    static inline meta::is_integral_t<Key, R> get(lua_State* L, Key&& key) {
         return Stack::GetValue<R>(L, std::forward<Key>(key));
     }
 
@@ -1240,17 +1300,17 @@ private:
     template <typename Name, typename T>
     static void set(lua_State* L, Name&& name, T&& value) {
         Push(L, std::forward<T>(value));
-        lua_setglobal(L, std::forward<Name>(name));
+        lua_setglobal(L, &name[0]);
     }
 
     /// Helper method to set multiple pairs of name/value global variables in Lua.
     /// \tparam indices Number of pairs to set.
-    /// \tparam Pairs Pair type
+    /// \tparam PairsTuple Pairs types
     /// \param L Lua state.
     /// \param pairs Pairs to set.
-    template <size_t... indices, typename Pairs>
-    static void setPairs(std::index_sequence<indices...>, lua_State* L, Pairs&& pairs) {
-        (set(L, std::get<indices * 2>(std::forward<Pairs>(pairs)), std::get<indices * 2 + 1>(std::forward<Pairs>(pairs))), ...);
+    template <size_t... indices, typename PairsTuple>
+    static void setPairs(std::index_sequence<indices...>, lua_State* L, PairsTuple&& pairs) {
+        (set(L, std::get<indices * 2>(std::forward<PairsTuple>(pairs)), std::get<indices * 2 + 1>(std::forward<PairsTuple>(pairs))), ...);
     }
 };
 
@@ -1570,38 +1630,23 @@ public:
         return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Running code failed");
     }
 
-    /// Get moon type of element at specified index in Lua stack.
-    /// \param index Index to check type.
-    /// \return Moon type of element.
-    static moon::LuaType GetType(int index = 1) { return static_cast<moon::LuaType>(lua_type(s_state, index)); }
-
-    /// Get moon type of global with specofic name.
-    /// \param name Global to check type.
-    /// \return Moon type of element.
-    static moon::LuaType GetType(const std::string& name) {
-        lua_getglobal(s_state, name.c_str());
-        moon::Stack::PopGuard guard{s_state};
-        return static_cast<moon::LuaType>(lua_type(s_state, -1));
+    /// Get type of Lua value at index in stack or with specific name.
+    /// \tparam Key Type of key (integer/string).
+    /// \param key Key to check type of.
+    /// \return Moon type of value.
+    template <typename Key>
+    static inline moon::LuaType GetType(Key&& key) {
+        return moon::Core::GetType(s_state, std::forward<Key>(key));
     }
 
-    /// Checks if element at index can be used as specified C type.
+    /// Checks if Lua value in index/name can be interpreted as specified C type.
     /// \tparam T C type to check.
-    /// \param index Index in Lua stack.
-    /// \return Whether or not it can.
-    template <typename T>
-    static inline bool Check(int index = 1) {
-        return moon::Stack::CheckValue<T>(s_state, index);
-    }
-
-    /// Checks if global with specified name can be used as specified C type.
-    /// \tparam T C type to check.
-    /// \param name Global name.
-    /// \return Whether or not it can.
-    template <typename T>
-    static bool Check(const std::string& name) {
-        lua_getglobal(s_state, name.c_str());
-        moon::Stack::PopGuard guard{s_state};
-        return moon::Stack::CheckValue<T>(s_state, -1);
+    /// \tparam Key Type of key (integer/string).
+    /// \param key Key to check. Either index or global name.
+    /// \return Whether or not value can be interpreted at specific type.
+    template <typename T, typename Key>
+    static inline bool Check(Key&& key) {
+        return moon::Core::Check<T>(s_state, std::forward<Key>(key));
     }
 
     /// Gets element(s) at specified Lua stack index and/or global name as C object.
@@ -1623,36 +1668,18 @@ public:
         moon::Core::Set(s_state, std::forward<Pairs>(pairs)...);
     }
 
-    /// Push value to Lua stack.
-    /// \tparam T Value type.
-    /// \param value Value pushed to Lua stack.
-    template <typename T>
-    static inline void Push(T&& value) {
-        moon::Core::Push(s_state, std::forward<T>(value));
-    }
-
-    /// Push global variable to Lua stack.
-    /// \tparam T Value type.
-    /// \param name Variable name.
-    /// \param value Value pushed to Lua stack.
-    template <typename T>
-    static void Push(const std::string& name, T&& value) {
-        moon::Core::Push(s_state, std::forward<T>(value));
-        lua_setglobal(s_state, name.c_str());
+    /// Recursive helper method to push multiple values directly to Lua stack.
+    /// \tparam Args Values types.
+    /// \param args Values to push to Lua stack.
+    template <typename... Args>
+    static void Push(Args&&... args) {
+        (moon::Core::Push(s_state, std::forward<Args>(args)), ...);
     }
 
     /// Get, assign or call a global variable from Lua. Assignment operator, callable and implicit conversion are enabled for ease to use.
     /// \param name Global variable name.
     /// \return Global object with assignment, call and implicit cast enabled.
     static moon::Global At(std::string name) { return {s_state, std::move(name)}; }
-
-    /// Recursive helper method to push multiple values to Lua stack.
-    /// \tparam Args Values types.
-    /// \param args Values to push to Lua stack.
-    template <typename... Args>
-    static void PushValues(Args&&... args) {
-        (moon::Core::Push(s_state, std::forward<Args>(args)), ...);
-    }
 
     /// Push a nil (null) value to Lua stack.
     static inline void PushNull() { lua_pushnil(s_state); }
@@ -1682,32 +1709,36 @@ public:
     }
 
     /// Registers and exposes C++ function to Lua.
+    /// \tparam Name Name type forwarding.
     /// \tparam Func Function type.
     /// \param name Function name to register in Lua.
     /// \param func Function to register.
-    template <typename Func>
-    static void RegisterFunction(const std::string& name, Func&& func) {
+    template <typename Name, typename Func>
+    static void RegisterFunction(Name&& name, Func&& func) {
         moon::Core::PushFunction(s_state, std::forward<Func>(func));
-        lua_setglobal(s_state, name.c_str());
+        lua_setglobal(s_state, &name[0]);
     }
 
     /// Calls a global Lua function.
     /// \tparam Ret Return types.
+    /// \tparam Name Name type forwarding.
     /// \tparam Args Argument types.
     /// \param name Global function name.
     /// \param args Arguments to call function with.
     /// \return Return value of function.
-    template <typename... Ret, typename... Args>
-    static decltype(auto) Call(const std::string& name, Args&&... args) {
-        lua_getglobal(s_state, name.c_str());
+    template <typename... Ret, typename Name, typename... Args>
+    static decltype(auto) Call(Name&& name, Args&&... args) {
+        lua_getglobal(s_state, &name[0]);
         return moon::Core::Call<Ret...>(s_state, std::forward<Args>(args)...);
     }
 
     /// Cleans/nulls a global variable.
+    /// \tparam Name Name type forwarding.
     /// \param name Variable to clean.
-    static void CleanGlobalVariable(const std::string& name) {
-        PushNull();
-        lua_setglobal(s_state, name.c_str());
+    template <typename Name>
+    static void CleanGlobalVariable(Name&& name) {
+        lua_pushnil(s_state);
+        lua_setglobal(s_state, &name[0]);
     }
 
     /// Make moon object directly in Lua stack from C object. Stack is immediately popped, since the reference is stored.
@@ -1716,7 +1747,7 @@ public:
     /// \return Newly created moon object.
     template <typename T>
     static moon::Object MakeObject(T&& value) {
-        Push(std::forward<T>(value));
+        moon::Core::Push(s_state, std::forward<T>(value));
         return moon::Object::CreateAndPop(s_state);
     }
 

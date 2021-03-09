@@ -4,7 +4,7 @@
 
 TEST_CASE("get values from stack benchmark", "[basic][benchmark]") {
     Moon::Init();
-    Moon::PushValues(true, 1, "string", new int[20]);
+    Moon::Push(true, 1, "string", new int[20]);
     CHECK(Moon::RunCode("return function(s) return s end"));
 
     CHECK(Moon::Get<bool>(1));

@@ -38,7 +38,7 @@ SCENARIO("index operations", "[basic]") {
         }
 
         WHEN("we check for valid index") {
-            Moon::PushValues(2, 3, 4, 5);
+            Moon::Push(2, 3, 4, 5);
 
             THEN("indices can be validated") {
                 REQUIRE(Moon::IsValidIndex(3));
@@ -52,7 +52,7 @@ SCENARIO("index operations", "[basic]") {
         }
 
         WHEN("we convert negative index") {
-            Moon::PushValues(2, 3, 4, 5);
+            Moon::Push(2, 3, 4, 5);
 
             THEN("indices can be converted") {
                 REQUIRE(Moon::ConvertNegativeIndex(-1) == 4);
@@ -125,7 +125,7 @@ TEST_CASE("print stack elements", "[basic]") {
     SECTION("handling invalid indexes") { REQUIRE(Moon::StackElementToStringDump(-1).empty()); }
 
     SECTION("printing whole stack") {
-        Moon::PushValues(1, 2, 3, true, "string");
+        Moon::Push(1, 2, 3, true, "string");
         Moon::LogStackDump();
         REQUIRE(log.size() > std::string("***** LUA STACK *****").size());
         Moon::Pop(5);
@@ -215,7 +215,7 @@ CATCH_REGISTER_ENUM(moon::LuaType, moon::LuaType::Null, moon::LuaType::Boolean, 
 TEST_CASE("check lua types", "[basic]") {
     Moon::Init();
     BEGIN_STACK_GUARD
-    Moon::PushValues(2, true, "passed", std::vector<int>{1, 2, 3});
+    Moon::Push(2, true, "passed", std::vector<int>{1, 2, 3});
     REQUIRE(Moon::Check<int>(1));
     REQUIRE(Moon::Check<bool>(2));
     REQUIRE(Moon::Check<std::string>(3));
@@ -428,7 +428,7 @@ int = -1
 float = 12.6
 double = 3.14
 )");
-    Moon::Push("constChar", "passes");
+    Moon::Set("constChar", "passes");
     BEGIN_STACK_GUARD
     REQUIRE(Moon::Check<std::string>("string"));
     REQUIRE(Moon::Check<bool>("bool"));
