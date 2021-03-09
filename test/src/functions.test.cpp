@@ -17,6 +17,7 @@ TEST_CASE("call global lua functions", "[functions]") {
                 break;
         }
     });
+    BEGIN_STACK_GUARD
 
     SECTION("no arguments, no return") {
         REQUIRE(Moon::RunCode("function Test() assert(true) end"));
@@ -25,29 +26,22 @@ TEST_CASE("call global lua functions", "[functions]") {
 
     SECTION("arguments, no return") {
         REQUIRE(Moon::RunCode("function Test(a, b, c) return a + b == 3 and c == 'passed' end"));
-        BEGIN_STACK_GUARD
         REQUIRE(Moon::Call<bool>("Test", 2, 1, "passed"));
-        END_STACK_GUARD
     }
 
     SECTION("no arguments, return") {
         Moon::RunCode("function Test() return 'passed' end");
-        BEGIN_STACK_GUARD
         REQUIRE(Moon::Call<std::string>("Test") == "passed");
-        END_STACK_GUARD
     }
 
     SECTION("arguments, return") {
         REQUIRE(Moon::RunCode("function Test(a, b, c, d) assert(a + b == 3); assert(c); return d['first'] end"));
         std::vector<std::string> vec;
         moon::LuaMap<std::vector<std::string>> map{std::make_pair("first", std::vector<std::string>{"passed"})};
-        BEGIN_STACK_GUARD
         REQUIRE(Moon::Call<std::vector<std::string>>("Test", 2, 1, true, map)[0] == "passed");
-        END_STACK_GUARD
     }
 
     SECTION("call function errors") {
-        BEGIN_STACK_GUARD
         Moon::Call<void>("dummy");
         REQUIRE_FALSE(error.empty());
         error.clear();
@@ -57,10 +51,10 @@ TEST_CASE("call global lua functions", "[functions]") {
         Moon::Call<std::string>("dummy");
         REQUIRE_FALSE(error.empty());
         error.clear();
-        END_STACK_GUARD
     }
 
     REQUIRE(error.empty());
+    END_STACK_GUARD
     Moon::CloseState();
 }
 

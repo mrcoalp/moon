@@ -550,7 +550,7 @@ SCENARIO("callable objects", "[object][functions][basic]") {
                     f.Call<int>(true);
                     REQUIRE(logs.ErrorCheck());
                 }
-                Moon::Push("test", true);
+                Moon::Set("test", true);
                 functions[0].Call<int>();
                 REQUIRE(logs.ErrorCheck());
             }
