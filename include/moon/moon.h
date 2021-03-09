@@ -66,6 +66,9 @@ template <typename T>
 constexpr bool is_c_string_v = std::is_same_v<std::decay_t<T>, const char*>;
 
 template <typename T, typename Ret = T>
+using is_basic_string_t = std::enable_if_t<is_string_v<T> || is_c_string_v<T>, Ret>;
+
+template <typename T, typename Ret = T>
 using is_pointer_t = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
 
 namespace meta_detail {
@@ -981,6 +984,23 @@ public:
 
     static void PushValue(lua_State* L, const Reference& value) { value.Push(L); }  // Needs to be const ref, for now, to handle Object
 
+    template <typename Key>
+    static meta::is_integral_t<Key, void> PushField(lua_State* L, int index, Key&& key) {
+        lua_rawgeti(L, index, key);
+    }
+
+    template <typename Key>
+    static meta::is_basic_string_t<Key, void> PushField(lua_State* L, int index, Key&& key) {
+        lua_getfield(L, index, &key[0]);
+    }
+
+    template <typename Ret, typename Key>
+    static decltype(auto) GetField(lua_State* L, int index, Key&& key) {
+        PopGuard guard{L};
+        PushField(L, index, std::forward<Key>(key));
+        return GetValue<Ret>(L, -1);
+    }
+
     static std::optional<std::string> CallFunctionWithErrorCheck(lua_State* L, int numberArgs, int numberReturns) {
         return checkErrorStatus(L, lua_pcall(L, numberArgs, numberReturns, 0));
     }
@@ -1119,6 +1139,17 @@ public:
     static decltype(auto) Get(lua_State* L, Keys&&... keys) {
         static_assert(sizeof...(Rets) == sizeof...(Keys), "number of returns and keys must match");
         return meta::multi_ret_t<std::decay_t<Rets>...>(get<std::decay_t<Rets>>(L, std::forward<Keys>(keys))...);
+    }
+
+    template <typename Ret, typename Key, typename... Keys>
+    static decltype(auto) TraverseGet(lua_State* L, Key&& key, Keys&&... keys) {
+        if constexpr (meta::sizeof_is_v<0, Keys...>) {
+            return Get<Ret>(L, std::forward<Key>(key));
+        } else {
+            moon::Stack::PopGuard guard{L};
+            lua_getglobal(L, &key[0]);
+            return traverseGet<Ret>(std::make_index_sequence<sizeof...(Keys)>{}, L, std::forward_as_tuple(std::forward<Keys>(keys)...));
+        }
     }
 
     /// Set one or multiple pairs of name/value globals.
@@ -1277,6 +1308,22 @@ private:
     template <typename R, typename Key>
     static inline meta::is_integral_t<Key, R> get(lua_State* L, Key&& key) {
         return Stack::GetValue<R>(L, std::forward<Key>(key));
+    }
+
+    template <typename Ret, size_t... indices, typename Keys>
+    static decltype(auto) traverseGet(std::index_sequence<indices...>, lua_State* L, Keys&& keys) {
+        return traverseGetRecursive<Ret>(L, std::get<indices>(std::forward<Keys>(keys))...);
+    }
+
+    template <typename Ret, typename Key, typename... Keys>
+    static decltype(auto) traverseGetRecursive(lua_State* L, Key&& key, Keys&&... keys) {
+        if constexpr (sizeof...(Keys) > 0) {
+            Stack::PopGuard guard{L};
+            Stack::PushField(L, -1, std::forward<Key>(key));
+            return traverseGetRecursive<Ret>(L, std::forward<Keys>(keys)...);
+        } else {
+            return Stack::GetField<Ret>(L, -1, std::forward<Key>(key));
+        }
     }
 
     /// Sets a new global variable in Lua.
@@ -1686,6 +1733,11 @@ public:
     template <typename... Rets, typename... Keys>
     static inline decltype(auto) Get(Keys&&... keys) {
         return moon::Core::Get<Rets...>(s_state, std::forward<Keys>(keys)...);
+    }
+
+    template <typename Ret, typename... Keys>
+    static decltype(auto) TraverseGet(Keys&&... keys) {
+        return moon::Core::TraverseGet<Ret>(s_state, std::forward<Keys>(keys)...);
     }
 
     /// Sets or multiple pairs name/value global in Lua.

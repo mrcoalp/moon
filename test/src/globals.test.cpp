@@ -17,6 +17,7 @@ number = 3.14
 boolean = true
 array = { 1, 2, 3, 4 }
 map = { x = { y = { z = 2 } } }
+map2 = { x = { y = { z = { 1, 2 } } } }
 function OnUpdate(bool)
     return bool
 end
@@ -36,6 +37,10 @@ return a, b, c
             bool b2 = Moon::At("boolean");
 
             THEN("values should match with expected") {
+                auto i = Moon::TraverseGet<int>("map2", "x", "y", "z", 2);
+                auto b3 = Moon::TraverseGet<bool>("boolean");
+                REQUIRE(b3);
+                REQUIRE(i == 2);
                 REQUIRE(s == "passed");
                 REQUIRE(d == 3.14);
                 REQUIRE(b);
