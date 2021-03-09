@@ -199,6 +199,19 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
                 REQUIRE_FALSE(f3);
             }
         }
+
+        AND_WHEN("view is used to interact with global scope") {
+            auto& view = Moon::View();
+            view["int"] = 2;
+            view["string"] = "passed";
+            view["f"] = [](bool test) { return test; };
+
+            THEN("globals should be accessible") {
+                REQUIRE(view["int"] == 2);
+                REQUIRE("passed" == std::string(view["string"]));  // TODO(MPINTO): Fix the need for this cast
+                REQUIRE(view["f"].Call<bool>(true));
+            }
+        }
     }
 
     END_STACK_GUARD

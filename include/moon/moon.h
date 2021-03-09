@@ -362,10 +362,10 @@ protected:
 
 namespace meta {
 template <typename T, typename Ret = T>
-using is_reference_t = std::enable_if_t<std::is_base_of_v<Reference, std::decay_t<T>>, Ret>;
+using is_moon_reference_t = std::enable_if_t<std::is_base_of_v<Reference, std::decay_t<T>>, Ret>;
 
 template <typename T>
-constexpr bool is_reference_v = std::is_base_of_v<Reference, std::decay_t<T>>;
+constexpr bool is_moon_reference_v = std::is_base_of_v<Reference, std::decay_t<T>>;
 }  // namespace meta
 
 /**
@@ -840,7 +840,7 @@ public:
     }
 
     template <typename R>
-    static meta::is_reference_t<R> GetValue(lua_State* L, int index) {
+    static meta::is_moon_reference_t<R> GetValue(lua_State* L, int index) {
         return {L, index};
     }
 
@@ -865,7 +865,7 @@ public:
         if (!CheckValue<R>(L, index)) {
             return DefaultReturnWithError<R>("type check failed: table");
         }
-        ensurePositiveIndex(index, L);
+        index = lua_absindex(L, index);
         auto size = (size_t)lua_rawlen(L, index);
         R vec;
         vec.reserve(size);
@@ -887,7 +887,7 @@ public:
         if (!CheckValue<R>(L, index)) {
             return DefaultReturnWithError<R>("type check failed: table");
         }
-        ensurePositiveIndex(index, L);
+        index = lua_absindex(L, index);
         lua_pushnil(L);
         R map;
         while (lua_next(L, index) != 0) {
@@ -907,7 +907,7 @@ public:
 
     template <typename R>
     static meta::is_tuple_t<R> GetValue(lua_State* L, int index) {
-        ensurePositiveIndex(index, L);
+        index = lua_absindex(L, index);
         constexpr size_t elements = std::tuple_size_v<R>;
         // Ensure we have a proper starting index, even when dealing with function call args
         int starting = index > 1 ? index - elements + 1 : index;
@@ -986,18 +986,6 @@ public:
     }
 
 private:
-    /// When using more complex data containers (like maps or vectors) recursion inside this can not be made with negative indexes.
-    /// If we try to get, for example, a std::vector and provide -1 as index, in the recursive call to get the value, we would
-    /// always access the last value in the stack, which is not the right element (since we push indexes of the vector). We must, in this case,
-    /// convert to the real index in the stack, by the right order.
-    /// \param index Index to check and convert if negative.
-    /// \param L Lua stack.
-    static void ensurePositiveIndex(int& index, lua_State* L) {
-        if (index < 0) {
-            index = lua_gettop(L) + index + 1;
-        }
-    }
-
     /// Tuple index based expander helper method.
     /// \tparam T Tuple type.
     /// \tparam indices Each of the tuple indices.
@@ -1130,7 +1118,7 @@ public:
     template <typename... Rets, typename... Keys>
     static decltype(auto) Get(lua_State* L, Keys&&... keys) {
         static_assert(sizeof...(Rets) == sizeof...(Keys), "number of returns and keys must match");
-        return meta::multi_ret_t<Rets...>(get<Rets>(L, std::forward<Keys>(keys))...);
+        return meta::multi_ret_t<std::decay_t<Rets>...>(get<std::decay_t<Rets>>(L, std::forward<Keys>(keys))...);
     }
 
     /// Set one or multiple pairs of name/value globals.
@@ -1172,7 +1160,7 @@ public:
     /// \param value Value to push to stack.
     template <typename T>
     static void Push(lua_State* L, T&& value) {
-        if constexpr (!meta::is_reference_v<T> && meta::is_callable_v<T>) {
+        if constexpr (!meta::is_moon_reference_v<T> && meta::is_callable_v<T>) {
             PushFunction(L, std::forward<T>(value));
         } else {
             Stack::PushValue(L, std::forward<T>(value));
@@ -1466,18 +1454,18 @@ public:
 };
 
 /// Global assignment in both ways (C and Lua). Direct call of global function suppport.
-class Global {
+class GlobalProxy {
 public:
     /// ctor
     /// \param L Lua state.
     /// \param name Global name.
-    Global(lua_State* L, std::string name) : m_state(L), m_name(std::move(name)) {}
+    GlobalProxy(lua_State* L, std::string name) : m_state(L), m_name(std::move(name)) {}
 
     /// Prevent copies.
-    Global(const Global&) = delete;
+    GlobalProxy(const GlobalProxy&) = delete;
 
     /// Prevent moves.
-    Global(Global&&) = delete;
+    GlobalProxy(GlobalProxy&&) = delete;
 
     /// Set global with passed value.
     /// \tparam T Value type to set.
@@ -1549,6 +1537,51 @@ private:
     /// Global name.
     std::string m_name;
 };
+
+template <typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator==(const GlobalProxy& left, T&& right) {
+    return left.Get<T>() == right;
+}
+
+template <typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(const GlobalProxy& left, T&& right) {
+    return left.Get<T>() != right;
+}
+
+template <typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator==(T&& left, const GlobalProxy& right) {
+    return right == left;
+}
+
+template <typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(T&& left, const GlobalProxy& right) {
+    return right != left;
+}
+
+/// Abstract view of global Lua state, with simple access to values.
+class StateView {
+public:
+    static StateView& Instance() {
+        static StateView instance;
+        return instance;
+    }
+
+    StateView(const StateView&) = delete;
+
+    StateView(StateView&&) = delete;
+
+    void Initialize(lua_State* L) { m_state = L; }
+
+    template <typename Key>
+    auto operator[](Key&& key) const {
+        return GlobalProxy(m_state, std::forward<Key>(key));
+    }
+
+private:
+    StateView() = default;
+
+    lua_State* m_state{nullptr};
+};
 }  // namespace moon
 
 /// Handles all the logic related to "communication" between C++ and Lua, initializing it.
@@ -1563,6 +1596,7 @@ public:
         luaL_openlibs(s_state);
         moon::Logger::SetCallback([](moon::Logger::Level, const std::string&) {});
         moon::Invokable::Register(s_state);
+        moon::StateView::Instance().Initialize(s_state);
     }
 
     /// Closes Lua state.
@@ -1603,12 +1637,7 @@ public:
     /// This method converts a negative index to a positive one. Returns original if already positive.
     /// \param index Index to convert.
     /// \return Newly converted index.
-    static int ConvertNegativeIndex(int index) {
-        if (index >= 0) {
-            return index;
-        }
-        return GetTop() + index + 1;
-    }
+    static int ConvertNegativeIndex(int index) { return lua_absindex(s_state, index); }
 
     /// Loads specified file script.
     /// \param filePath File path to load.
@@ -1677,9 +1706,15 @@ public:
     }
 
     /// Get, assign or call a global variable from Lua. Assignment operator, callable and implicit conversion are enabled for ease to use.
+    /// \tparam Key Type of key.
     /// \param name Global variable name.
     /// \return Global object with assignment, call and implicit cast enabled.
-    static moon::Global At(std::string name) { return {s_state, std::move(name)}; }
+    template <typename Key>
+    static moon::GlobalProxy At(Key&& name) {
+        return {s_state, std::forward<Key>(name)};
+    }
+
+    static moon::StateView& View() { return moon::StateView::Instance(); }
 
     /// Push a nil (null) value to Lua stack.
     static inline void PushNull() { lua_pushnil(s_state); }
