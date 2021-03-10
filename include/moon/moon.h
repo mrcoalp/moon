@@ -239,6 +239,25 @@ struct is_callable<
 
 template <typename T>
 constexpr bool is_callable_v = meta_detail::is_callable<std::decay_t<T>>::value;
+
+template <typename T>
+using convert_to_tuple_t = std::conditional_t<meta::meta_detail::tuple<std::decay_t<T>>::value, T, std::tuple<T>>;
+
+namespace meta_detail {
+template <typename T>
+decltype(auto) force_tuple(T&& value) {
+    if constexpr (tuple<std::decay_t<T>>::value) {
+        return std::forward<T>(value);
+    } else {
+        return std::tuple<T>(std::forward<T>(value));
+    }
+}
+}  // namespace meta_detail
+
+template <typename... T>
+decltype(auto) concat_tuple(T&&... value) {
+    return std::tuple_cat(meta_detail::force_tuple(std::forward<T>(value))...);
+}
 }  // namespace meta
 
 constexpr const char* LUA_INVOKABLE_HOLDER_META_NAME{"LuaInvokableHolder"};
@@ -1144,11 +1163,11 @@ public:
     template <typename Ret, typename Key, typename... Keys>
     static decltype(auto) TraverseGet(lua_State* L, Key&& key, Keys&&... keys) {
         if constexpr (meta::sizeof_is_v<0, Keys...>) {
-            return Get<Ret>(L, std::forward<Key>(key));
+            return get<std::decay_t<Ret>>(L, std::forward<Key>(key));
         } else {
             moon::Stack::PopGuard guard{L};
             lua_getglobal(L, &key[0]);
-            return traverseGet<Ret>(std::make_index_sequence<sizeof...(Keys)>{}, L, std::forward_as_tuple(std::forward<Keys>(keys)...));
+            return tupleGet<Ret>(std::make_index_sequence<sizeof...(Keys)>{}, L, std::forward_as_tuple(std::forward<Keys>(keys)...));
         }
     }
 
@@ -1246,7 +1265,7 @@ private:
     /// \param key Key to check. Either index or global name.
     /// \return Moon type.
     template <typename Key>
-    static std::enable_if_t<meta::is_string_v<Key> || meta::is_c_string_v<Key>, LuaType> type(lua_State* L, Key&& key) {
+    static meta::is_basic_string_t<Key, LuaType> type(lua_State* L, Key&& key) {
         lua_getglobal(L, &key[0]);
         Stack::PopGuard guard{L};
         return type(L, -1);
@@ -1269,7 +1288,7 @@ private:
     /// \param key Key to check. Either index or global name.
     /// \return Whether or not value can be interpreted at specific type.
     template <typename T, typename Key>
-    static std::enable_if_t<meta::is_string_v<Key> || meta::is_c_string_v<Key>, bool> check(lua_State* L, Key&& key) {
+    static meta::is_basic_string_t<Key, bool> check(lua_State* L, Key&& key) {
         lua_getglobal(L, &key[0]);
         Stack::PopGuard guard{L};
         return check<T>(L, -1);
@@ -1293,7 +1312,7 @@ private:
     /// \param key Global name.
     /// \return C value.
     template <typename Ret, typename Key>
-    static std::enable_if_t<meta::is_string_v<Key> || meta::is_c_string_v<Key>, Ret> get(lua_State* L, Key&& key) {
+    static meta::is_basic_string_t<Key, Ret> get(lua_State* L, Key&& key) {
         lua_getglobal(L, &key[0]);
         Stack::PopGuard guard{L};
         return get<Ret>(L, -1);
@@ -1311,7 +1330,7 @@ private:
     }
 
     template <typename Ret, size_t... indices, typename Keys>
-    static decltype(auto) traverseGet(std::index_sequence<indices...>, lua_State* L, Keys&& keys) {
+    static decltype(auto) tupleGet(std::index_sequence<indices...>, lua_State* L, Keys&& keys) {
         return traverseGetRecursive<Ret>(L, std::get<indices>(std::forward<Keys>(keys))...);
     }
 
@@ -1500,27 +1519,24 @@ public:
     }
 };
 
-/// Global assignment in both ways (C and Lua). Direct call of global function suppport.
-class GlobalProxy {
+/// Global assignment in both ways (C and Lua). Direct call of global function support.
+template <typename Key>
+class ViewProxy {
+    using proxy_key_t = meta::convert_to_tuple_t<Key>;
+
 public:
     /// ctor
     /// \param L Lua state.
     /// \param name Global name.
-    GlobalProxy(lua_State* L, std::string name) : m_state(L), m_name(std::move(name)) {}
-
-    /// Prevent copies.
-    GlobalProxy(const GlobalProxy&) = delete;
-
-    /// Prevent moves.
-    GlobalProxy(GlobalProxy&&) = delete;
+    ViewProxy(lua_State* L, Key&& key) : m_state(L), m_key(std::forward<Key>(key)) {}
 
     /// Set global with passed value.
     /// \tparam T Value type to set.
     /// \param value Value to set.
     template <typename T>
     void Set(T&& value) const {
-        Core::Push(m_state, std::forward<T>(value));
-        lua_setglobal(m_state, m_name.c_str());
+        constexpr int size = std::tuple_size_v<proxy_key_t>;
+        Core::Set(m_state, std::get<size - 1>(m_key), std::forward<T>(value));
     }
 
     /// Get global as C value.
@@ -1528,19 +1544,19 @@ public:
     /// \return Global variable value.
     template <typename R>
     inline decltype(auto) Get() const {
-        return Core::Get<R>(m_state, m_name);
+        return get<R>(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{});
     }
 
     [[nodiscard]] LuaType GetType() const {
-        lua_getglobal(m_state, m_name.c_str());
-        Stack::PopGuard guard{m_state};
-        return static_cast<moon::LuaType>(lua_type(m_state, -1));
+        constexpr int size = std::tuple_size_v<proxy_key_t>;
+        return Core::GetType(m_state, std::get<size - 1>(m_key));
     }
 
     /// Clean global variable from Lua.
     void Clean() const {
         lua_pushnil(m_state);
-        lua_setglobal(m_state, m_name.c_str());
+        constexpr int size = std::tuple_size_v<proxy_key_t>;
+        lua_setglobal(m_state, std::get<size - 1>(m_key));
     }
 
     /// Call global function.
@@ -1550,16 +1566,40 @@ public:
     /// \return Returned value(s) from function.
     template <typename... Rets, typename... Args>
     decltype(auto) Call(Args&&... args) const {
-        lua_getglobal(m_state, m_name.c_str());
+        constexpr int size = std::tuple_size_v<proxy_key_t>;
+        lua_getglobal(m_state, std::get<size - 1>(m_key));
         return Core::Call<Rets...>(m_state, std::forward<Args>(args)...);
+    }
+
+    template <typename K>
+    decltype(auto) operator[](K&& key) const& {
+        auto keys = meta::concat_tuple(m_key, std::forward<K>(key));
+        return ViewProxy<decltype(keys)>(m_state, std::move(keys));
+    }
+
+    template <typename K>
+    decltype(auto) operator[](K&& key) & {
+        auto keys = meta::concat_tuple(m_key, std::forward<K>(key));
+        return ViewProxy<decltype(keys)>(m_state, std::move(keys));
+    }
+
+    template <typename K>
+    decltype(auto) operator[](K&& key) && {
+        auto keys = meta::concat_tuple(std::move(m_key), std::forward<K>(key));
+        return ViewProxy<decltype(keys)>(m_state, std::move(keys));
     }
 
     /// Assign any value to global.
     /// \tparam T Value type to assign.
     /// \param value Value to assign to global.
     template <typename T>
-    void operator=(T&& value) const {
+    void operator=(T&& value) & {
         Set(std::forward<T>(value));
+    }
+
+    template <typename T>
+    void operator=(T&& value) && {
+        std::move(*this).Set(std::forward<T>(value));
     }
 
     /// Get global as any type.
@@ -1579,32 +1619,41 @@ public:
     }
 
 private:
+    template <typename Ret, size_t... indices>
+    decltype(auto) get(std::index_sequence<indices...>) const {
+        return Core::TraverseGet<Ret>(m_state, std::get<indices>(m_key)...);
+    }
+
     /// Lua state.
     lua_State* m_state{nullptr};
     /// Global name.
-    std::string m_name;
+    proxy_key_t m_key;
 };
 
-template <typename T>
-inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator==(const GlobalProxy& left, T&& right) {
-    return left.Get<T>() == right;
+template <typename Key, typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator==(const ViewProxy<Key>& left, T&& right) {
+    return left.template Get<T>() == right;
 }
 
-template <typename T>
-inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(const GlobalProxy& left, T&& right) {
-    return left.Get<T>() != right;
+template <typename Key, typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(const ViewProxy<Key>& left, T&& right) {
+    return left.template Get<T>() != right;
 }
 
-template <typename T>
-inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator==(T&& left, const GlobalProxy& right) {
+template <typename Key, typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator==(T&& left, const ViewProxy<Key>& right) {
     return right == left;
 }
 
-template <typename T>
-inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(T&& left, const GlobalProxy& right) {
+template <typename Key, typename T>
+inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(T&& left, const ViewProxy<Key>& right) {
     return right != left;
 }
+}  // namespace moon
 
+class Moon;
+
+namespace moon {
 /// Abstract view of global Lua state, with simple access to values.
 class StateView {
 public:
@@ -1617,17 +1666,23 @@ public:
 
     StateView(StateView&&) = delete;
 
-    void Initialize(lua_State* L) { m_state = L; }
+    void operator=(const StateView&) = delete;
+
+    void operator=(StateView&&) = delete;
 
     template <typename Key>
-    auto operator[](Key&& key) const {
-        return GlobalProxy(m_state, std::forward<Key>(key));
+    auto operator[](Key&& key) const& {
+        return ViewProxy<Key>(m_state, std::forward<Key>(key));
     }
 
 private:
     StateView() = default;
 
+    void initialize(lua_State* L) { m_state = L; }
+
     lua_State* m_state{nullptr};
+
+    friend class ::Moon;
 };
 }  // namespace moon
 
@@ -1643,7 +1698,7 @@ public:
         luaL_openlibs(s_state);
         moon::Logger::SetCallback([](moon::Logger::Level, const std::string&) {});
         moon::Invokable::Register(s_state);
-        moon::StateView::Instance().Initialize(s_state);
+        moon::StateView::Instance().initialize(s_state);
     }
 
     /// Closes Lua state.
@@ -1762,7 +1817,7 @@ public:
     /// \param name Global variable name.
     /// \return Global object with assignment, call and implicit cast enabled.
     template <typename Key>
-    static moon::GlobalProxy At(Key&& name) {
+    static moon::ViewProxy<Key> At(Key&& name) {
         return {s_state, std::forward<Key>(name)};
     }
 

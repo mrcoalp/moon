@@ -118,6 +118,19 @@ return a, b, c
             }
         }
 
+        AND_WHEN("view is used to access state") {
+            auto& view = Moon::View();
+
+            THEN("values can be fetched") {
+                REQUIRE(view["number"] == 3.14);
+                REQUIRE(view["boolean"]);
+                int i = view["array"][3];  // TODO(MPINTO): Fix this need for explicit cast, review reference handling
+                REQUIRE(i == 3);
+                int i2 = view["map2"]["x"]["y"]["z"][2];
+                REQUIRE(i2 == 2);
+            }
+        }
+
         Moon::Pop(3);
     }
 
