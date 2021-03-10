@@ -21,6 +21,7 @@ map2 = { x = { y = { z = { 1, 2 } } } }
 function OnUpdate(bool)
     return bool
 end
+func_nested = { f = function(bool) return bool end, x = { y = { f = function(bool) assert(bool) end } } }
 local a = 1
 local b = 2
 local c = 3
@@ -102,26 +103,28 @@ return a, b, c
             }
         }
 
-        AND_WHEN("globals are cleared from stack") {
-            Moon::At("string").Clean();
-            Moon::At("number").Clean();
-            Moon::At("boolean").Clean();
-
-            THEN("those values should be null") {
-                REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
-                REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
-                REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
-            }
-        }
+        //        AND_WHEN("globals are cleared from stack") {
+        //            Moon::At("string").Clean();
+        //            Moon::At("number").Clean();
+        //            Moon::At("boolean").Clean();
+        //
+        //            THEN("those values should be null") {
+        //                REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
+        //                REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
+        //                REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
+        //            }
+        //        }
 
         AND_WHEN("traverse getter and setter are used") {
-            auto i = Moon::TraverseGet<int>("map2", "x", "y", "z", 2);
-            auto b = Moon::TraverseGet<bool>("boolean");
-            Moon::TraverseSet("map2", "x", "y", "z", 2, 1);
-            auto i2 = Moon::TraverseGet<int>("map2", "x", "y", "z", 2);
-            int i3 = Moon::TraverseGet<int>("array", 1);
-            Moon::TraverseSet("array", 2, 6);
-            int i4 = Moon::TraverseGet<int>("array", 2);
+            auto i = Moon::GetNested<int>("map2", "x", "y", "z", 2);
+            auto b = Moon::GetNested<bool>("boolean");
+            Moon::SetNested("map2", "x", "y", "z", 2, 1);
+            auto i2 = Moon::GetNested<int>("map2", "x", "y", "z", 2);
+            int i3 = Moon::GetNested<int>("array", 1);
+            Moon::SetNested("array", 2, 6);
+            int i4 = Moon::GetNested<int>("array", 2);
+            Moon::SetNested("array2", 1, true);
+            auto b2 = Moon::GetNested<bool>("array2", 1);
 
             THEN("values should be valid and updated") {
                 REQUIRE(i == 2);
@@ -129,10 +132,11 @@ return a, b, c
                 REQUIRE(i3 == 1);
                 REQUIRE(i4 == 6);
                 REQUIRE(b);
+                REQUIRE(b2);
             }
 
             AND_THEN("errors should be caught but not to throw") {
-                Moon::TraverseGet<int>("map2", "x");
+                Moon::GetNested<int>("map2", "x");
                 REQUIRE(logs.ErrorCheck());
             }
         }
@@ -148,12 +152,20 @@ return a, b, c
                 int i2 = view["map2"]["x"]["y"]["z"][2];
                 REQUIRE(i2 == 2);
             }
+
+            AND_THEN("functions can be called") {
+                auto b = view["func_nested"]["f"].Call<bool>(true);
+                REQUIRE(b);
+                view["func_nested"]["x"]["y"]["f"](true);
+                REQUIRE(logs.NoErrors());
+            }
         }
 
         Moon::Pop(3);
     }
 
     END_STACK_GUARD
+    INFO(logs.GetError())
     REQUIRE(logs.NoErrors());
     Moon::CloseState();
 }
