@@ -37,10 +37,6 @@ return a, b, c
             bool b2 = Moon::At("boolean");
 
             THEN("values should match with expected") {
-                auto i = Moon::TraverseGet<int>("map2", "x", "y", "z", 2);
-                auto b3 = Moon::TraverseGet<bool>("boolean");
-                REQUIRE(b3);
-                REQUIRE(i == 2);
                 REQUIRE(s == "passed");
                 REQUIRE(d == 3.14);
                 REQUIRE(b);
@@ -115,6 +111,29 @@ return a, b, c
                 REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
                 REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
                 REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
+            }
+        }
+
+        AND_WHEN("traverse getter and setter are used") {
+            auto i = Moon::TraverseGet<int>("map2", "x", "y", "z", 2);
+            auto b = Moon::TraverseGet<bool>("boolean");
+            Moon::TraverseSet("map2", "x", "y", "z", 2, 1);
+            auto i2 = Moon::TraverseGet<int>("map2", "x", "y", "z", 2);
+            int i3 = Moon::TraverseGet<int>("array", 1);
+            Moon::TraverseSet("array", 2, 6);
+            int i4 = Moon::TraverseGet<int>("array", 2);
+
+            THEN("values should be valid and updated") {
+                REQUIRE(i == 2);
+                REQUIRE(i2 == 1);
+                REQUIRE(i3 == 1);
+                REQUIRE(i4 == 6);
+                REQUIRE(b);
+            }
+
+            AND_THEN("errors should be caught but not to throw") {
+                Moon::TraverseGet<int>("map2", "x");
+                REQUIRE(logs.ErrorCheck());
             }
         }
 

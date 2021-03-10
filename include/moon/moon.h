@@ -1013,11 +1013,14 @@ public:
         lua_getfield(L, index, &key[0]);
     }
 
-    template <typename Ret, typename Key>
-    static decltype(auto) GetField(lua_State* L, int index, Key&& key) {
-        PopGuard guard{L};
-        PushField(L, index, std::forward<Key>(key));
-        return GetValue<Ret>(L, -1);
+    template <typename Key>
+    static meta::is_integral_t<Key, void> SetField(lua_State* L, int index, Key&& key) {
+        lua_rawseti(L, index, key);
+    }
+
+    template <typename Key>
+    static meta::is_basic_string_t<Key, void> SetField(lua_State* L, int index, Key&& key) {
+        lua_setfield(L, index, &key[0]);
     }
 
     static std::optional<std::string> CallFunctionWithErrorCheck(lua_State* L, int numberArgs, int numberReturns) {
@@ -1167,7 +1170,7 @@ public:
         } else {
             moon::Stack::PopGuard guard{L};
             lua_getglobal(L, &key[0]);
-            return tupleGet<Ret>(std::make_index_sequence<sizeof...(Keys)>{}, L, std::forward_as_tuple(std::forward<Keys>(keys)...));
+            return traverseGetRecursive<Ret>(L, std::forward<Keys>(keys)...);
         }
     }
 
@@ -1179,6 +1182,18 @@ public:
     static void Set(lua_State* L, Pairs&&... pairs) {
         static_assert(sizeof...(Pairs) % 2 == 0, "pushing globals only works with name/value pairs");
         setPairs(std::make_index_sequence<sizeof...(Pairs) / 2>{}, L, std::forward_as_tuple(std::forward<Pairs>(pairs)...));
+    }
+
+    template <typename Key, typename... Args>
+    static void TraverseSet(lua_State* L, Key&& key, Args&&... args) {
+        static_assert(sizeof...(Args) > 0, "at least one key and one value are necessary");
+        if constexpr (meta::sizeof_is_v<1, Args...>) {
+            set(L, std::forward<Key>(key), std::forward<Args>(args)...);
+        } else {
+            moon::Stack::PopGuard guard{L};
+            lua_getglobal(L, &key[0]);
+            traverseSetRecursive(L, std::forward<Args>(args)...);
+        }
     }
 
     /// Pushes new userdata (pointer) to Lua stack.
@@ -1329,19 +1344,14 @@ private:
         return Stack::GetValue<R>(L, std::forward<Key>(key));
     }
 
-    template <typename Ret, size_t... indices, typename Keys>
-    static decltype(auto) tupleGet(std::index_sequence<indices...>, lua_State* L, Keys&& keys) {
-        return traverseGetRecursive<Ret>(L, std::get<indices>(std::forward<Keys>(keys))...);
-    }
-
     template <typename Ret, typename Key, typename... Keys>
     static decltype(auto) traverseGetRecursive(lua_State* L, Key&& key, Keys&&... keys) {
+        Stack::PopGuard guard{L};
+        Stack::PushField(L, -1, std::forward<Key>(key));
         if constexpr (sizeof...(Keys) > 0) {
-            Stack::PopGuard guard{L};
-            Stack::PushField(L, -1, std::forward<Key>(key));
             return traverseGetRecursive<Ret>(L, std::forward<Keys>(keys)...);
         } else {
-            return Stack::GetField<Ret>(L, -1, std::forward<Key>(key));
+            return Stack::GetValue<Ret>(L, -1);
         }
     }
 
@@ -1365,6 +1375,18 @@ private:
     template <size_t... indices, typename PairsTuple>
     static void setPairs(std::index_sequence<indices...>, lua_State* L, PairsTuple&& pairs) {
         (set(L, std::get<indices * 2>(std::forward<PairsTuple>(pairs)), std::get<indices * 2 + 1>(std::forward<PairsTuple>(pairs))), ...);
+    }
+
+    template <typename Key, typename... Args>
+    static void traverseSetRecursive(lua_State* L, Key&& key, Args&&... args) {
+        Stack::PopGuard guard{L};
+        if constexpr (meta::sizeof_is_v<1, Args...>) {
+            Stack::PushValue(L, std::forward<Args>(args)...);
+            Stack::SetField(L, -2, std::forward<Key>(key));
+        } else {
+            Stack::PushField(L, -1, std::forward<Key>(key));
+            traverseSetRecursive(L, std::forward<Args>(args)...);
+        }
     }
 };
 
@@ -1802,6 +1824,11 @@ public:
     template <typename... Pairs>
     static inline void Set(Pairs&&... pairs) {
         moon::Core::Set(s_state, std::forward<Pairs>(pairs)...);
+    }
+
+    template <typename... Args>
+    static void TraverseSet(Args&&... args) {
+        moon::Core::TraverseSet(s_state, std::forward<Args>(args)...);
     }
 
     /// Recursive helper method to push multiple values directly to Lua stack.
