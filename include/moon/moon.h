@@ -47,29 +47,32 @@ namespace meta {
 template <typename T, typename Ret = T>
 using is_bool_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, bool>, Ret>;
 
+template <typename T>
+constexpr bool is_integral_v = std::is_integral_v<std::decay_t<T>> && !std::is_same_v<std::decay_t<T>, bool>;
+
 template <typename T, typename Ret = T>
-using is_integral_t = std::enable_if_t<std::is_integral_v<std::decay_t<T>> && !std::is_same_v<std::decay_t<T>, bool>, Ret>;
+using is_integral_t = std::enable_if_t<is_integral_v<T>, Ret>;
 
 template <typename T, typename Ret = T>
 using is_floating_point_t = std::enable_if_t<std::is_floating_point_v<std::decay_t<T>>, Ret>;
-
-template <typename T, typename Ret = T>
-using is_string_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, std::string>, Ret>;
 
 template <typename T>
 constexpr bool is_string_v = std::is_same_v<std::decay_t<T>, std::string>;
 
 template <typename T, typename Ret = T>
-using is_c_string_t = std::enable_if_t<std::is_same_v<std::decay_t<T>, const char*>, Ret>;
+using is_string_t = std::enable_if_t<is_string_v<T>, Ret>;
 
 template <typename T>
 constexpr bool is_c_string_v = std::is_same_v<std::decay_t<T>, const char*>;
 
 template <typename T, typename Ret = T>
-using is_basic_string_t = std::enable_if_t<is_string_v<T> || is_c_string_v<T>, Ret>;
+using is_c_string_t = std::enable_if_t<is_c_string_v<T>, Ret>;
 
 template <typename T>
 constexpr bool is_basic_string_v = is_string_v<T> || is_c_string_v<T>;
+
+template <typename T, typename Ret = T>
+using is_basic_string_t = std::enable_if_t<is_basic_string_v<T>, Ret>;
 
 template <typename T, typename Ret = T>
 using is_pointer_t = std::enable_if_t<std::is_pointer_v<T> && !std::is_same_v<T, const char*>, Ret>;
@@ -127,8 +130,11 @@ struct tuple<std::tuple<T...>> : std::true_type {
 };
 }  // namespace meta_detail
 
+template <typename T>
+constexpr bool is_tuple_v = meta_detail::tuple<std::decay_t<T>>::value;
+
 template <typename T, typename Ret = T>
-using is_tuple_t = std::enable_if_t<meta_detail::tuple<T>::value, Ret>;
+using is_tuple_t = std::enable_if_t<is_tuple_v<T>, Ret>;
 
 template <typename T, typename... Ts>
 constexpr bool none_is_v = !std::disjunction_v<std::is_same<T, Ts>...>;
@@ -1147,31 +1153,67 @@ private:
 
 class Core {
 public:
+    enum FieldMode { None = 0x00, Create = 0x01 };
+
+    template <bool first, typename Key>
+    struct FieldHandler {
+        template <FieldMode mode>
+        void Get(lua_State* L, int index, Key&& key) {
+            if constexpr (first) {
+                if constexpr (meta::is_basic_string_v<Key>) {
+                    lua_getglobal(L, &key[0]);
+                    if constexpr (mode & FieldMode::Create) {
+                        if (lua_isnil(L, -1)) {
+                            lua_pop(L, 1);
+                            lua_newtable(L);
+                            lua_setglobal(L, &key[0]);
+                            lua_getglobal(L, &key[0]);
+                        }
+                    }
+                } else if constexpr (meta::is_integral_v<Key>) {
+                    lua_pushvalue(L, std::forward<Key>(key));
+                }
+            } else {
+                Stack::PushField(L, index, std::forward<Key>(key));
+                if constexpr (mode & FieldMode::Create) {
+                    if (lua_isnil(L, -1)) {
+                        lua_pop(L, 1);
+                        lua_newtable(L);
+                        Stack::SetField(L, -2, std::forward<Key>(key));
+                        Stack::PushField(L, -1, std::forward<Key>(key));
+                    }
+                }
+            }
+        }
+
+        void Set(lua_State* L, int index, Key&& key) {
+            if constexpr (first && meta::is_basic_string_v<Key>) {
+                lua_setglobal(L, &key[0]);
+            } else {
+                Stack::SetField(L, index, std::forward<Key>(key));
+            }
+        }
+    };
+
     template <typename... Keys>
-    static LuaType GetType(lua_State* L, Keys&&... keys) {  // TODO(MPINTO): Nested
-        return type(L, std::forward<Keys>(keys)...);
+    static LuaType GetType(lua_State* L, Keys&&... keys) {
+        return type<true>(L, std::forward<Keys>(keys)...);
     }
 
     template <typename T, typename... Keys>
-    static bool Check(lua_State* L, Keys&&... keys) {  // TODO(MPINTO): Nested
-        return check<T>(L, std::forward<Keys>(keys)...);
+    static bool Check(lua_State* L, Keys&&... keys) {
+        return check<true, T>(L, std::forward<Keys>(keys)...);
     }
 
     template <typename... Rets, typename... Keys>
     static decltype(auto) Get(lua_State* L, Keys&&... keys) {
         static_assert(sizeof...(Rets) == sizeof...(Keys), "number of returns and keys must match");
-        return meta::multi_ret_t<std::decay_t<Rets>...>(get<std::decay_t<Rets>>(L, std::forward<Keys>(keys))...);
+        return meta::multi_ret_t<std::decay_t<Rets>...>(getMaybeTuple<std::decay_t<Rets>>(L, std::forward<Keys>(keys))...);
     }
 
-    template <typename Ret, typename Key, typename... Keys>
-    static decltype(auto) GetNested(lua_State* L, Key&& key, Keys&&... keys) {
-        if constexpr (meta::sizeof_is_v<0, Keys...>) {
-            return get<std::decay_t<Ret>>(L, std::forward<Key>(key));
-        } else {
-            moon::Stack::PopGuard guard{L};
-            lua_getglobal(L, &key[0]);
-            return getNestedRecursive<Ret>(L, std::forward<Keys>(keys)...);
-        }
+    template <typename Ret, typename... Keys>
+    static decltype(auto) GetNested(lua_State* L, Keys&&... keys) {
+        return get<true, std::decay_t<Ret>>(L, std::forward<Keys>(keys)...);
     }
 
     template <typename... Pairs>
@@ -1180,23 +1222,10 @@ public:
         setPairs(std::make_index_sequence<sizeof...(Pairs) / 2>{}, L, std::forward_as_tuple(std::forward<Pairs>(pairs)...));
     }
 
-    template <typename Key, typename... Args>
-    static void SetNested(lua_State* L, Key&& key, Args&&... args) {
-        static_assert(sizeof...(Args) > 0, "at least one key and one value are necessary");
-        if constexpr (meta::sizeof_is_v<1, Args...>) {
-            set(L, std::forward<Key>(key), std::forward<Args>(args)...);
-        } else {
-            int pop = 1;
-            lua_getglobal(L, &key[0]);
-            if (lua_isnil(L, -1)) {
-                lua_newtable(L);
-                lua_setglobal(L, &key[0]);
-                lua_getglobal(L, &key[0]);
-                ++pop;
-            }
-            moon::Stack::PopGuard guard{L, pop};
-            setNestedRecursive(L, std::forward<Args>(args)...);
-        }
+    template <typename... Args>
+    static void SetNested(lua_State* L, Args&&... args) {
+        static_assert(sizeof...(Args) > 1, "at least one key and one value are necessary");
+        set<true>(L, std::forward<Args>(args)...);
     }
 
     template <typename T>
@@ -1222,10 +1251,13 @@ public:
         }
     }
 
-    template <typename Key, typename... Keys>
-    static void PushField(lua_State* L, Key&& global, Keys&&... keys) {
-        lua_getglobal(L, &global[0]);
-        (pushNestedField(L, -1, std::forward<Keys>(keys)), ...);
+    template <bool first, typename Key, typename... Keys>
+    static void PushField(lua_State* L, Key&& key, Keys&&... keys) {
+        FieldHandler<first, Key>{}.template Get<FieldMode::None>(L, -1, std::forward<Key>(key));
+        if constexpr (sizeof...(Keys) > 0) {
+            PushField<false>(L, std::forward<Keys>(keys)...);
+            lua_remove(L, -2);
+        }
     }
 
     template <typename... Rets>
@@ -1250,86 +1282,67 @@ public:
             return DefaultReturnWithError<Rets...>(std::forward<std::string>(check.value()));
         }
         Stack::PopGuard guard{L, meta::count_expected_v<Rets...>};
-        return get<meta::multi_ret_t<Rets...>>(L, -1);
+        return Stack::GetValue<meta::multi_ret_t<Rets...>>(L, -1);
     }
 
 private:
-    template <typename Key>
-    static meta::is_basic_string_t<Key, LuaType> type(lua_State* L, Key&& key) {
-        lua_getglobal(L, &key[0]);
+    template <bool first, typename Key, typename... Keys>
+    static decltype(auto) type(lua_State* L, Key&& key, Keys&&... keys) {
         Stack::PopGuard guard{L};
-        return type(L, -1);
-    }
-
-    template <typename Key>
-    static inline meta::is_integral_t<Key, LuaType> type(lua_State* L, Key&& key) {
-        return static_cast<LuaType>(lua_type(L, std::forward<Key>(key)));
-    }
-
-    template <typename T, typename Key>
-    static meta::is_basic_string_t<Key, bool> check(lua_State* L, Key&& key) {
-        lua_getglobal(L, &key[0]);
-        Stack::PopGuard guard{L};
-        return check<T>(L, -1);
-    }
-
-    template <typename T, typename Key>
-    static inline meta::is_integral_t<Key, bool> check(lua_State* L, Key&& key) {
-        return Stack::CheckValue<T>(L, std::forward<Key>(key));
-    }
-
-    template <typename Ret, typename Key>
-    static meta::is_basic_string_t<Key, Ret> get(lua_State* L, Key&& key) {
-        lua_getglobal(L, &key[0]);
-        Stack::PopGuard guard{L};
-        return get<Ret>(L, -1);
-    }
-
-    template <typename R, typename Key>
-    static inline meta::is_integral_t<Key, R> get(lua_State* L, Key&& key) {
-        return Stack::GetValue<R>(L, std::forward<Key>(key));
-    }
-
-    template <typename Ret, typename Key, typename... Keys>
-    static decltype(auto) getNestedRecursive(lua_State* L, Key&& key, Keys&&... keys) {
-        Stack::PopGuard guard{L};
-        Stack::PushField(L, -1, std::forward<Key>(key));
-        if constexpr (sizeof...(Keys) > 0) {
-            return getNestedRecursive<Ret>(L, std::forward<Keys>(keys)...);
+        FieldHandler<first, Key>{}.template Get<FieldMode::None>(L, -1, std::forward<Key>(key));
+        if constexpr (meta::sizeof_is_v<0, Keys...>) {
+            return static_cast<LuaType>(lua_type(L, -1));
         } else {
-            return Stack::GetValue<Ret>(L, -1);
+            return type<false>(L, std::forward<Keys>(keys)...);
         }
     }
 
-    template <typename Name, typename T>
-    static void set(lua_State* L, Name&& name, T&& value) {
-        Push(L, std::forward<T>(value));
-        lua_setglobal(L, &name[0]);
+    template <bool first, typename T, typename Key, typename... Keys>
+    static decltype(auto) check(lua_State* L, Key&& key, Keys&&... keys) {
+        Stack::PopGuard guard{L};
+        FieldHandler<first, Key>{}.template Get<FieldMode::None>(L, -1, std::forward<Key>(key));
+        if constexpr (meta::sizeof_is_v<0, Keys...>) {
+            return Stack::CheckValue<T>(L, -1);
+        } else {
+            return check<false, T>(L, std::forward<Keys>(keys)...);
+        }
+    }
+
+    template <bool first, typename Ret, typename Key, typename... Keys>
+    static decltype(auto) get(lua_State* L, Key&& key, Keys&&... keys) {
+        Stack::PopGuard guard{L};
+        FieldHandler<first, Key>{}.template Get<FieldMode::None>(L, -1, std::forward<Key>(key));
+        if constexpr (meta::sizeof_is_v<0, Keys...>) {
+            return Stack::GetValue<Ret>(L, -1);
+        } else {
+            return get<false, Ret>(L, std::forward<Keys>(keys)...);
+        }
+    }
+
+    template <typename Ret, typename Key>
+    static decltype(auto) getMaybeTuple(lua_State* L, Key&& key) {
+        if constexpr (meta::is_tuple_v<Ret>) {
+            return Stack::GetValue<Ret>(L, std::forward<Key>(key));
+        } else {
+            return get<true, Ret>(L, std::forward<Key>(key));
+        }
+    }
+
+    template <bool first, typename Key, typename... Args>
+    static void set(lua_State* L, Key&& key, Args&&... args) {
+        if constexpr (meta::sizeof_is_v<1, Args...>) {
+            Push(L, std::forward<Args>(args)...);
+            FieldHandler<first, Key>{}.Set(L, -2, std::forward<Key>(key));
+        } else {
+            Stack::PopGuard guard{L};
+            FieldHandler<first, Key>{}.template Get<FieldMode::Create>(L, -1, std::forward<Key>(key));
+            set<false>(L, std::forward<Args>(args)...);
+        }
     }
 
     template <size_t... indices, typename PairsTuple>
     static void setPairs(std::index_sequence<indices...>, lua_State* L, PairsTuple&& pairs) {
-        (set(L, std::get<indices * 2>(std::forward<PairsTuple>(pairs)), std::get<indices * 2 + 1>(std::forward<PairsTuple>(pairs))), ...);
-    }
-
-    template <typename Key, typename... Args>
-    static void setNestedRecursive(lua_State* L, Key&& key, Args&&... args) {
-        Stack::PopGuard guard{L};
-        if constexpr (meta::sizeof_is_v<1, Args...>) {
-            Push(L, std::forward<Args>(args)...);
-            Stack::SetField(L, -2, std::forward<Key>(key));
-        } else {
-            Stack::PushField(L, -1, std::forward<Key>(key));
-            setNestedRecursive(L, std::forward<Args>(args)...);
-        }
-    }
-
-    template <typename Key>
-    static void pushNestedField(lua_State* L, int index, Key&& key) {
-        index = lua_absindex(L, index);
-        if (Stack::PushField(L, index, std::forward<Key>(key))) {
-            lua_remove(L, index);
-        }
+        (set<true>(L, std::get<indices * 2>(std::forward<PairsTuple>(pairs)), std::get<indices * 2 + 1>(std::forward<PairsTuple>(pairs))), ...);
     }
 };
 
@@ -1511,7 +1524,12 @@ public:
         set(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}, std::forward<T>(value));
     }
 
-    //[[nodiscard]] LuaType GetType() const { return type(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}); }
+    [[nodiscard]] inline LuaType GetType() const { return type(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}); }
+
+    template <typename T>
+    [[nodiscard]] inline bool Check() const {
+        return check<T>(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{});
+    }
 
     /// Clean global variable from Lua.
     //    void Clean() const {
@@ -1590,13 +1608,18 @@ private:
 
     template <typename... Rets, size_t... indices, typename... Args>
     decltype(auto) call(std::index_sequence<indices...>, Args&&... args) const {
-        Core::PushField(m_state, std::get<indices>(m_key)...);
+        Core::PushField<true>(m_state, std::get<indices>(m_key)...);
         return Core::Call<Rets...>(m_state, std::forward<Args>(args)...);
     }
 
     template <size_t... indices>
     decltype(auto) type(std::index_sequence<indices...>) const {
         return Core::GetType(m_state, std::get<indices>(m_key)...);
+    }
+
+    template <typename T, size_t... indices>
+    decltype(auto) check(std::index_sequence<indices...>) const {
+        return Core::Check<T>(m_state, std::get<indices>(m_key)...);
     }
 
     /// Lua state.

@@ -21,7 +21,7 @@ map2 = { x = { y = { z = { 1, 2 } } } }
 function OnUpdate(bool)
     return bool
 end
-func_nested = { f = function(bool) return bool end, x = { y = { f = function(bool) assert(bool) end } } }
+func_nested = { f = function(bool) return bool, 2 end, x = { y = { f = function(bool) assert(bool) end } } }
 local a = 1
 local b = 2
 local c = 3
@@ -38,6 +38,8 @@ return a, b, c
             bool b2 = Moon::At("boolean");
 
             THEN("values should match with expected") {
+                REQUIRE(Moon::GetType("map", "x", "y", "z") == moon::LuaType::Number);
+                REQUIRE(Moon::Check<int>("map", "x", "y", "z"));
                 REQUIRE(s == "passed");
                 REQUIRE(d == 3.14);
                 REQUIRE(b);
@@ -125,12 +127,17 @@ return a, b, c
             int i4 = Moon::GetNested<int>("array", 2);
             Moon::SetNested("array2", 1, true);
             auto b2 = Moon::GetNested<bool>("array2", 1);
+            // New keys
+            Moon::SetNested("map2", "x", "y", "w", 1, 2);
+            int i5 = Moon::GetNested<int>("map2", "x", "y", "w", 1);
 
             THEN("values should be valid and updated") {
                 REQUIRE(i == 2);
                 REQUIRE(i2 == 1);
                 REQUIRE(i3 == 1);
                 REQUIRE(i4 == 6);
+                INFO(logs.GetError());
+                REQUIRE(i5 == 2);
                 REQUIRE(b);
                 REQUIRE(b2);
             }
@@ -254,11 +261,21 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
             view["int"] = 2;
             view["string"] = "passed";
             view["f"] = [](bool test) { return test; };
+            view["map"]["x"][1] = 2;
 
             THEN("globals should be accessible") {
+                REQUIRE(view["int"].Check<int>());
                 REQUIRE(view["int"] == 2);
-                REQUIRE("passed" == std::string(view["string"]));  // TODO(MPINTO): Fix the need for this cast
+                // REQUIRE("passed" == std::string(view["string"]));  // TODO(MPINTO): Fix the need for this cast
+                REQUIRE(view["f"].GetType() == moon::LuaType::UserData);
                 REQUIRE(view["f"].Call<bool>(true));
+            }
+
+            AND_THEN("nested fields should be accessible") {
+                REQUIRE(view["map"]["x"][1].Check<int>());
+                REQUIRE(view["map"]["x"][1].GetType() == moon::LuaType::Number);
+                int i = view["map"]["x"][1];
+                REQUIRE(i == 2);
             }
         }
     }
