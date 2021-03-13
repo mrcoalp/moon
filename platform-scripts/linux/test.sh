@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Wether or not to output results to file
+# Whether or not to output results to file
 COVERAGE=0
+# Default is debug build
+CONFIGURATION=Debug
 
 usage() {
   echo "Usage
@@ -12,12 +14,20 @@ usage() {
 
 Options
     -h | --help     - Show help
+    -d | --debug    - Run moon tests with debug configuration
+    -r | --release  - Run moon tests with release configuration
     -c | --coverage - Output results to file"
 }
 
 # Check for arguments
 while test $# -gt 0; do
   case "$1" in
+  -d | --debug | --Debug)
+    CONFIGURATION=Debug
+    ;;
+  -r | --release | --Release)
+    CONFIGURATION=Release
+    ;;
   -c | --coverage)
     COVERAGE=1
     ;;
@@ -40,7 +50,7 @@ while test $# -gt 0; do
 done
 
 OUT=$(pwd)
-cd build/Debug/test || exit 1
+cd build/$CONFIGURATION/test || exit 1
 
 if [ $COVERAGE = 1 ]; then
   ./moon_tst -o "$OUT"/test_results.xml -r junit
