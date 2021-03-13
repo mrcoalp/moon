@@ -4,8 +4,12 @@
 #include "traits.h"
 
 namespace moon {
+/// Proxy to be used as descriptor to nested values in tables, both for globals or objects. Provides simple stl like access to properties.
+/// \tparam Lookup Table to lookup. Can be global or referenced in object.
+/// \tparam Key Key to add as descriptor. Will be converted to tuple, to support multiple.
 template <typename Lookup, typename Key>
 class LookupProxy {
+    /// Forced tuple of Key.
     using proxy_key_t = meta::convert_to_tuple_t<Key>;
 
 public:
@@ -42,7 +46,7 @@ public:
     }
 
     template <typename T>
-    operator T() const& {
+    operator T() const {
         return Get<T>();
     }
 
@@ -94,6 +98,7 @@ private:
         return Core::Call<Rets...>(m_table->GetState(), std::forward<Args>(args)...);
     }
 
+    /// Table to get state from, and push to stack.
     const Lookup* m_table;
     /// Global name.
     proxy_key_t m_key;
