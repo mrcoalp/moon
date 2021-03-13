@@ -7,8 +7,12 @@ on:
   pull_request:
 
 jobs:
-  gcc:
+  shared:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_args: [ -t --coverage, -r -t --coverage, -t --clang, -r -t --clang ]
+        test_args: [ --coverage, -d ]
 
     steps:
       - uses: actions/checkout@v2
@@ -16,14 +20,11 @@ jobs:
       - name: Prepare environment
         run: sudo apt-get install gcovr -y
 
-      - name: Build Debug
-        run: bash platform-scripts/linux/build.sh -t --coverage
-
-      - name: Build Release
-        run: bash platform-scripts/linux/build.sh -r -t --coverage
+      - name: Build
+        run: bash platform-scripts/linux/build.sh ${{ matrix.build_args }}
 
       - name: Test
-        run: bash platform-scripts/linux/test.sh --coverage
+        run: bash platform-scripts/linux/test.sh ${{ matrix.test_args }}
 
       - name: Upload test results and coverage
         uses: actions/upload-artifact@v2
@@ -40,24 +41,18 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: bash <(curl -s https://codecov.io/bash) -f moon_coverage.xml
 
-  clang:
+  static:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_args: [ -t --coverage --static, -r -t --coverage --static, -t --clang --static, -r -t --clang  --static ]
+        test_args: [ --coverage, -d ]
 
     steps:
       - uses: actions/checkout@v2
 
-      - name: Build Debug
-        run: bash platform-scripts/linux/build.sh -t --clang
-
-      - name: Build Release
-        run: bash platform-scripts/linux/build.sh -r -t --clang
+      - name: Build
+        run: bash platform-scripts/linux/build.sh ${{ matrix.build_args }}
 
       - name: Test
-        run: bash platform-scripts/linux/test.sh
-
-      - name: Upload test results and coverage
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-results-coverage
-          path: test_results.xml
-          retention-days: 5
+        run: bash platform-scripts/linux/test.sh ${{ matrix.test_args }}
