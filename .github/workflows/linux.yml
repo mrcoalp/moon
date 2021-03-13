@@ -7,77 +7,29 @@ on:
   pull_request:
 
 jobs:
-  gcc-debug:
+  gcc:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        build_args: [ -d -t, -d -t --static ]
+        args: [ -d -t, -d -t --static, -r -t, -r -t --static ]
     steps:
       - uses: actions/checkout@v2
       - name: Build
-        run: bash platform-scripts/linux/build.sh ${{ matrix.build_args }}
+        run: bash platform-scripts/linux/build.sh ${{ matrix.args }}
       - name: Test
-        run: bash platform-scripts/linux/test.sh -d
-      - name: Upload test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-results-gcc-debug
-          path: test_results.xml
-          retention-days: 5
+        run: bash platform-scripts/linux/test.sh ${{ matrix.args }}
 
-  gcc-release:
+  clang:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        build_args: [ -r -t, -r -t --static ]
+        args: [ -d -t --clang, -d -t --static --clang, -r -t --clang, -r -t --static --clang ]
     steps:
       - uses: actions/checkout@v2
       - name: Build
-        run: bash platform-scripts/linux/build.sh ${{ matrix.build_args }}
+        run: bash platform-scripts/linux/build.sh ${{ matrix.args }}
       - name: Test
-        run: bash platform-scripts/linux/test.sh -r
-      - name: Upload test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-results-gcc-release
-          path: test_results.xml
-          retention-days: 5
-
-  clang-debug:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        build_args: [ -d -t --clang, -d -t --static --clang ]
-    steps:
-      - uses: actions/checkout@v2
-      - name: Build
-        run: bash platform-scripts/linux/build.sh ${{ matrix.build_args }}
-      - name: Test
-        run: bash platform-scripts/linux/test.sh -d
-      - name: Upload test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-results-clang-debug
-          path: test_results.xml
-          retention-days: 5
-
-  clang-release:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        build_args: [ -r -t --clang, -r -t --static --clang ]
-    steps:
-      - uses: actions/checkout@v2
-      - name: Build
-        run: bash platform-scripts/linux/build.sh ${{ matrix.build_args }}
-      - name: Test
-        run: bash platform-scripts/linux/test.sh -r
-      - name: Upload test results
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-results-clang-release
-          path: test_results.xml
-          retention-days: 5
+        run: bash platform-scripts/linux/test.sh ${{ matrix.args }}
 
   coverage:
     runs-on: ubuntu-latest
@@ -94,6 +46,7 @@ jobs:
         with:
           name: test-coverage
           path: |
+            test_results.xml
             moon_coverage_html/
             moon_coverage.xml
           retention-days: 5

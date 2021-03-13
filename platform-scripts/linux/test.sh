@@ -36,9 +36,7 @@ while test $# -gt 0; do
     exit 0
     ;;
   -*)
-    echo -e "\033[0;31mBad argument: $1\033[0m"
-    usage
-    exit 1
+    echo "Ignored argument \"$1\". Continuing..."
     ;;
   *)
     echo -e "\033[0;31mUnknown argument: $1\033[0m"
