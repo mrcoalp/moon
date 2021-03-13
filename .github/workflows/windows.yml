@@ -7,38 +7,26 @@ on:
   pull_request:
 
 jobs:
-  build-static:
+  msvc:
     runs-on: windows-latest
-
+    strategy:
+      matrix:
+        args: [ -d -t, -d -t --shared, -r -t, -r -t --shared ]
     steps:
       - uses: actions/checkout@v2
+      - name: Build
+        run: platform-scripts\windows\build ${{ matrix.args }}
+      - name: Test
+        run: platform-scripts\windows\test ${{ matrix.args }}
 
-      - name: Build Debug
-        run: platform-scripts\windows\build -t
-
-      - name: Test Debug
-        run: platform-scripts\windows\test
-
-      - name: Build Release
-        run: platform-scripts\windows\build -r -t
-
-      - name: Test Release
-        run: platform-scripts\windows\test -r
-
-  build-shared:
+  mingw:
     runs-on: windows-latest
-
+    strategy:
+      matrix:
+        args: [ -d -t --mingw, -d -t --shared --mingw, -r -t --mingw, -r -t --shared --mingw ]
     steps:
       - uses: actions/checkout@v2
-
       - name: Build Debug
-        run: platform-scripts\windows\build -t --shared
-
+        run: platform-scripts\windows\build ${{ matrix.args }}
       - name: Test Debug
-        run: platform-scripts\windows\test
-
-      - name: Build Release
-        run: platform-scripts\windows\build -r -t --shared
-
-      - name: Test Release
-        run: platform-scripts\windows\test -r
+        run: platform-scripts\windows\test ${{ matrix.args }}
