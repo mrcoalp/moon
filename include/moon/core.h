@@ -5,13 +5,23 @@
 namespace moon {
 class Core {
 public:
+    /// Options enum for FieldHandler getter mode. When recursively getting nested props in table, those can be created if nonexistent or not.
     enum FieldMode { None = 0x00, Create = 0x01 };
 
+    /// Handles table field get and set methods. Abstracts both global and nested tables.
+    /// \tparam first Whether or not field to handle is global.
+    /// \tparam Key Key type to push/set. Integral or string.
     template <bool first, typename Key>
     struct FieldHandler {};
 
     template <typename Key>
     struct FieldHandler<false, Key> {
+        /// Pushes field to Lua stack. When create mode is active, creates a new table with provided key.
+        /// \tparam mode Insertion mode. Whether or not to create new fields if null.
+        /// \param L Lua state.
+        /// \param index Index, in stack, of table to get field.
+        /// \param key Key to search in table.
+        /// \return Number of elements that need to be popped. If push field fails, no elements should be popped.
         template <FieldMode mode = FieldMode::None>
         int Get(lua_State* L, int index, Key&& key) {
             bool pop = Stack::PushField(L, index, std::forward<Key>(key));
@@ -26,15 +36,21 @@ public:
             return (int)pop;
         }
 
-        void Set(lua_State* L, int index, Key&& key) {
-            if (!Stack::SetField(L, index, std::forward<Key>(key))) {
-                lua_pop(L, 1);
-            }
-        }
+        /// Sets a new field in a Lua table. If fails to set, returns 1, since value that was previously pushed to set table must be popped.
+        /// \param L Lua state.
+        /// \param index Index of table to set field.
+        /// \param key Key of field to set.
+        /// \return Number of elements that must be popped from stack. 0 if success.
+        int Set(lua_State* L, int index, Key&& key) { return Stack::SetField(L, index, std::forward<Key>(key)) ? 0 : 1; }
     };
 
     template <typename Key>
     struct FieldHandler<true, Key> {
+        /// Pushes a new global to stack. If create mode is active, creates a new global, if null.
+        /// \tparam mode Insertion mode. Whether or not to create new global if null.
+        /// \param L Lua state.
+        /// \param key Key to create global with. If integral, value at key index is pushed to top of stack.
+        /// \return Number of elements to be popped from stack.
         template <FieldMode mode = FieldMode::None>
         int Get(lua_State* L, int, Key&& key) {
             if constexpr (meta::is_basic_string_v<Key>) {
@@ -53,9 +69,14 @@ public:
             return 1;
         }
 
-        void Set(lua_State* L, int, Key&& key) {
+        /// Sets a new global with the value at top of stack.
+        /// \param L Lua state.
+        /// \param key Key (name) to set global. Must be string.
+        /// \return Number of elements to pop from stack. Always 0.
+        int Set(lua_State* L, int, Key&& key) {
             static_assert(meta::is_basic_string_v<Key>, "setting a global directly by stack index is forbidden");
             lua_setglobal(L, &key[0]);
+            return 0;
         }
     };
 
@@ -179,7 +200,7 @@ private:
     static void clean(lua_State* L, Key&& key, Keys&&... keys) {
         if constexpr (meta::sizeof_is_v<0, Keys...>) {
             lua_pushnil(L);
-            FieldHandler<first, Key>{}.Set(L, -2, std::forward<Key>(key));
+            Stack::PopGuard guard{L, FieldHandler<first, Key>{}.Set(L, -2, std::forward<Key>(key))};
         } else {
             Stack::PopGuard guard{L, FieldHandler<first, Key>{}.Get(L, -1, std::forward<Key>(key))};
             clean<false>(L, std::forward<Keys>(keys)...);
@@ -209,7 +230,7 @@ private:
     static void set(lua_State* L, Key&& key, Args&&... args) {
         if constexpr (meta::sizeof_is_v<1, Args...>) {
             Push(L, std::forward<Args>(args)...);
-            FieldHandler<first, Key>{}.Set(L, -2, std::forward<Key>(key));
+            Stack::PopGuard guard{L, FieldHandler<first, Key>{}.Set(L, -2, std::forward<Key>(key))};
         } else {
             Stack::PopGuard guard{L, FieldHandler<first, Key>{}.template Get<FieldMode::Create>(L, -1, std::forward<Key>(key))};
             set<false>(L, std::forward<Args>(args)...);
