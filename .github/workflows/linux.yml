@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  gcc:
     runs-on: ubuntu-latest
 
     steps:
@@ -39,3 +39,25 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: bash <(curl -s https://codecov.io/bash) -f moon_coverage.xml
+
+  clang:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build Debug
+        run: bash platform-scripts/linux/build.sh -t --clang
+
+      - name: Build Release
+        run: bash platform-scripts/linux/build.sh -r -t --clang
+
+      - name: Test
+        run: bash platform-scripts/linux/test.sh
+
+      - name: Upload test results and coverage
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-results-coverage
+          path: test_results.xml
+          retention-days: 5
