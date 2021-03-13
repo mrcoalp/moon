@@ -1485,19 +1485,6 @@ inline std::enable_if_t<!meta::is_moon_reference_v<T>, bool> operator!=(T&& left
     return right != left;
 }
 
-struct Global {
-    static constexpr bool global = true;
-
-    explicit Global(lua_State* L) : m_state(L) {}
-
-    [[nodiscard]] int Push() const { return 0; }
-
-    [[nodiscard]] lua_State* GetState() const { return m_state; }
-
-private:
-    lua_State* m_state;
-};
-
 /// Any Lua object retrieved directly from stack and saved as reference.
 class Object : public Reference {
 public:
@@ -1681,6 +1668,8 @@ namespace moon {
 /// Abstract view of global Lua state, with simple access to values.
 class StateView {
 public:
+    static constexpr bool global = true;
+
     static StateView& Instance() {
         static StateView instance;
         return instance;
@@ -1690,26 +1679,25 @@ public:
 
     StateView(StateView&&) = delete;
 
+    [[nodiscard]] int Push() const { return 0; }
+
+    [[nodiscard]] lua_State* GetState() const { return m_state; }
+
     void operator=(const StateView&) = delete;
 
     void operator=(StateView&&) = delete;
 
     template <typename Key>
     auto operator[](Key&& key) const& {
-        return LookupProxy<Global, Key>{&s_global, std::forward<Key>(key)};
+        return LookupProxy<StateView, Key>{this, std::forward<Key>(key)};
     }
 
 private:
     StateView() = default;
 
-    void initialize(lua_State* L) {
-        m_state = L;
-        s_global = Global{m_state};
-    }
+    void initialize(lua_State* L) { m_state = L; }
 
     lua_State* m_state{nullptr};
-
-    static inline Global s_global{nullptr};
 
     friend class ::Moon;
 };
@@ -1851,8 +1839,8 @@ public:
     /// \param key Global variable name.
     /// \return Global object with assignment, call and implicit cast enabled.
     template <typename Key>
-    static inline moon::LookupProxy<moon::Global, Key> At(Key&& key) {
-        return {&moon::StateView::s_global, std::forward<Key>(key)};
+    static inline moon::LookupProxy<moon::StateView, Key> At(Key&& key) {
+        return {&moon::StateView::Instance(), std::forward<Key>(key)};
     }
 
     static inline moon::StateView& View() { return moon::StateView::Instance(); }
