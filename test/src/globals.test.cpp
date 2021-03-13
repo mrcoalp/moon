@@ -110,18 +110,6 @@ return a, b, c, function(a, b, c) return a, b, c end
             }
         }
 
-        //        AND_WHEN("globals are cleared from stack") {
-        //            Moon::At("string").Clean();
-        //            Moon::At("number").Clean();
-        //            Moon::At("boolean").Clean();
-        //
-        //            THEN("those values should be null") {
-        //                REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
-        //                REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
-        //                REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
-        //            }
-        //        }
-
         AND_WHEN("nested getter and setter are used") {
             auto i = Moon::GetNested<int>("map2", "x", "y", "z", 2);
             auto b = Moon::GetNested<bool>("boolean");
@@ -149,6 +137,21 @@ return a, b, c, function(a, b, c) return a, b, c end
             AND_THEN("errors should be caught but not to throw") {
                 Moon::GetNested<int>("map2", "x");
                 REQUIRE(logs.ErrorCheck());
+            }
+        }
+
+        AND_WHEN("variables are cleared from stack") {
+            Moon::At("string").Clean();
+            Moon::At("number").Clean();
+            Moon::At("boolean").Clean();
+            REQUIRE(Moon::At("map")["x"]["y"].GetType() == moon::LuaType::Table);
+            Moon::At("map")["x"]["y"].Clean();
+
+            THEN("those values should be null") {
+                REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
+                REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
+                REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
+                REQUIRE(Moon::At("map")["x"]["y"].GetType() == moon::LuaType::Null);
             }
         }
 

@@ -250,12 +250,12 @@ template <typename T>
 constexpr bool is_callable_v = meta_detail::is_callable<std::decay_t<T>>::value;
 
 template <typename T>
-using convert_to_tuple_t = std::conditional_t<meta::meta_detail::tuple<std::decay_t<T>>::value, T, std::tuple<T>>;
+using convert_to_tuple_t = std::conditional_t<is_tuple_v<T>, T, std::tuple<T>>;
 
 namespace meta_detail {
 template <typename T>
 decltype(auto) force_tuple(T&& value) {
-    if constexpr (tuple<std::decay_t<T>>::value) {
+    if constexpr (is_tuple_v<T>) {
         return std::forward<T>(value);
     } else {
         return std::tuple<T>(std::forward<T>(value));
@@ -1213,6 +1213,11 @@ public:
         return check<global, T>(L, std::forward<Keys>(keys)...);
     }
 
+    template <bool global = true, typename... Keys>
+    static void Clean(lua_State* L, Keys&&... keys) {
+        clean<global>(L, std::forward<Keys>(keys)...);
+    }
+
     template <typename... Rets, typename... Keys>
     static decltype(auto) Get(lua_State* L, Keys&&... keys) {
         static_assert(sizeof...(Rets) == sizeof...(Keys), "number of returns and keys must match");
@@ -1316,6 +1321,18 @@ private:
         }
     }
 
+    template <bool first, typename Key, typename... Keys>
+    static void clean(lua_State* L, Key&& key, Keys&&... keys) {
+        if constexpr (meta::sizeof_is_v<0, Keys...>) {
+            lua_pushnil(L);
+            FieldHandler<first, Key>{}.Set(L, -2, std::forward<Key>(key));
+        } else {
+            Stack::PopGuard guard{L};
+            FieldHandler<first, Key>{}.Get(L, -1, std::forward<Key>(key));
+            clean<false>(L, std::forward<Keys>(keys)...);
+        }
+    }
+
     template <bool first, typename Ret, typename Key, typename... Keys>
     static decltype(auto) get(lua_State* L, Key&& key, Keys&&... keys) {
         Stack::PopGuard guard{L};
@@ -1367,23 +1384,18 @@ public:
     }
 
     template <typename T>
-    void Set(T&& value) const {
+    inline void Set(T&& value) const {
         set(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}, std::forward<T>(value));
     }
 
-    [[nodiscard]] inline LuaType GetType() const { return type(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}); }
+    [[nodiscard]] inline decltype(auto) GetType() const { return type(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}); }
 
     template <typename T>
     [[nodiscard]] inline bool Check() const {
         return check<T>(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{});
     }
 
-    /// Clean global variable from Lua.
-    //    void Clean() const {
-    //        lua_pushnil(m_state);
-    //        constexpr int size = std::tuple_size_v<proxy_key_t>;
-    //        lua_setglobal(m_state, std::get<size - 1>(m_key));
-    //    }
+    inline void Clean() const { clean(std::make_index_sequence<std::tuple_size_v<proxy_key_t>>{}); }
 
     template <typename... Rets, typename... Args>
     decltype(auto) Call(Args&&... args) const {
@@ -1458,6 +1470,12 @@ private:
     decltype(auto) check(std::index_sequence<indices...>) const {
         Stack::PopGuard guard{m_table->GetState(), m_table->Push()};
         return Core::Check<T, Lookup::global>(m_table->GetState(), std::get<indices>(m_key)...);
+    }
+
+    template <size_t... indices>
+    decltype(auto) clean(std::index_sequence<indices...>) const {
+        Stack::PopGuard guard{m_table->GetState(), m_table->Push()};
+        return Core::Clean<Lookup::global>(m_table->GetState(), std::get<indices>(m_key)...);
     }
 
     const Lookup* m_table;
@@ -1797,6 +1815,14 @@ public:
         return moon::Core::Check<T>(s_state, std::forward<Keys>(keys)...);
     }
 
+    /// Cleans/nulls a variable, nested or not.
+    /// \tparam Keys Key type forwarding.
+    /// \param keys Nested (or not) keys path to arrive at variable to clean.
+    template <typename... Keys>
+    static inline void Clean(Keys&&... keys) {
+        moon::Core::Clean(s_state, std::forward<Keys>(keys)...);
+    }
+
     /// Gets element(s) at specified Lua stack index and/or global name as C object.
     /// \tparam Rets C type(s) to cast Lua object to.
     /// \tparam Keys Integral or string
@@ -1834,10 +1860,10 @@ public:
         (moon::Core::Push(s_state, std::forward<Args>(args)), ...);
     }
 
-    /// Get, assign or call a global variable from Lua. Assignment operator, callable and implicit conversion are enabled for ease to use.
+    /// Get, assign or call a global variable from Lua. Assignment operator, callable and implicit conversion are enabled for ease of use.
     /// \tparam Key Type of key.
-    /// \param key Global variable name.
-    /// \return Global object with assignment, call and implicit cast enabled.
+    /// \param key Global variable name or stack index.
+    /// \return Lookup proxy with assignment, call and implicit cast enabled.
     template <typename Key>
     static inline moon::LookupProxy<moon::StateView, Key> At(Key&& key) {
         return {&moon::StateView::Instance(), std::forward<Key>(key)};
@@ -1880,7 +1906,7 @@ public:
     template <typename Name, typename Func>
     static inline void RegisterFunction(Name&& name, Func&& func) {
         moon::Core::PushFunction(s_state, std::forward<Func>(func));
-        lua_setglobal(s_state, &name[0]);
+        moon::Core::FieldHandler<true, Name>{}.Set(s_state, -1, std::forward<Name>(name));
     }
 
     /// Calls a global Lua function.
@@ -1892,17 +1918,8 @@ public:
     /// \return Return value of function.
     template <typename... Ret, typename Key, typename... Args>
     static inline decltype(auto) Call(Key&& key, Args&&... args) {
-        moon::Core::FieldHandler<true, Key>{}.Get(s_state, -1, std::forward<Key>(key));
+        moon::Core::FieldHandler<true, Key>{}.Get(s_state, 0, std::forward<Key>(key));
         return moon::Core::Call<Ret...>(s_state, std::forward<Args>(args)...);
-    }
-
-    /// Cleans/nulls a global variable.
-    /// \tparam Name Name type forwarding.
-    /// \param name Variable to clean.
-    template <typename Name>
-    static inline void CleanGlobalVariable(Name&& name) {
-        lua_pushnil(s_state);
-        lua_setglobal(s_state, &name[0]);
     }
 
     /// Make moon object directly in Lua stack from C object. Stack is immediately popped, since the reference is stored.

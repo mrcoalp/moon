@@ -441,7 +441,7 @@ double = 3.14
     REQUIRE(Moon::Get<float>("float") == 12.6f);
     REQUIRE(Moon::Get<double>("double") == 3.14);
     REQUIRE(std::string(Moon::Get<const char*>("constChar")) == "passes");
-    Moon::CleanGlobalVariable("double");
+    Moon::Clean("double");
     REQUIRE_FALSE(Moon::Get<double>("double") == 3.14);
     END_STACK_GUARD
     Moon::CloseState();
