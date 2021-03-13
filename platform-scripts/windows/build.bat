@@ -6,6 +6,7 @@ set clean=false
 set install=
 set doc=OFF
 set shared=OFF
+set generator="Visual Studio 16 2019"
 
 :loop
     if "%~1" == "" goto build
@@ -16,6 +17,7 @@ set shared=OFF
     if %1 == -i set install=--target install
     if %1 == --doc set doc=ON
     if %1 == --shared set shared=ON
+    if %1 == --mingw set generator="MinGW Makefiles"
     if %1 == -h goto usage
     shift
     if not "%~1" == "" goto loop
@@ -27,7 +29,7 @@ set shared=OFF
     )
     mkdir build\%configuration%
     cd build\%configuration%
-    cmake ..\.. -G "Visual Studio 16 2019" -DBUILD_SHARED_LIBS=%shared% -DMOON_BUILD_TESTS=%tests% -DMOON_BUILD_DOC=%doc% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_INSTALL_PREFIX=./bin
+    cmake ..\.. -G %generator% -DBUILD_SHARED_LIBS=%shared% -DMOON_BUILD_TESTS=%tests% -DMOON_BUILD_DOC=%doc% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_INSTALL_PREFIX=./bin
     cmake --build . --config %configuration% %install%
     cd ..\..
     goto end
