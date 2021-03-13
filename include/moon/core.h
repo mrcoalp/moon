@@ -208,7 +208,7 @@ private:
     }
 
     template <bool first, typename Ret, typename Key, typename... Keys>
-    static decltype(auto) get(lua_State* L, Key&& key, Keys&&... keys)
+    static decltype(auto) get(lua_State* L, Key&& key, Keys&&... keys) {
         Stack::PopGuard guard{L, FieldHandler<first, Key>{}.Get(L, -1, std::forward<Key>(key))};
         if constexpr (meta::sizeof_is_v<0, Keys...>) {
             return Stack::GetValue<Ret>(L, -1);
