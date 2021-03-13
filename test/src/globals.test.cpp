@@ -17,13 +17,15 @@ number = 3.14
 boolean = true
 array = { 1, 2, 3, 4 }
 map = { x = { y = { z = 2 } } }
+map2 = { x = { y = { z = { 1, 2 } } } }
 function OnUpdate(bool)
     return bool
 end
+func_nested = { f = function(bool) return bool, 2 end, x = { y = { f = function(bool) assert(bool) end } } }
 local a = 1
 local b = 2
 local c = 3
-return a, b, c
+return a, b, c, function(a, b, c) return a, b, c end
 )"));
         using traverse_map = std::map<std::string, std::map<std::string, std::map<std::string, int>>>;
 
@@ -36,6 +38,8 @@ return a, b, c
             bool b2 = Moon::At("boolean");
 
             THEN("values should match with expected") {
+                REQUIRE(Moon::GetType("map", "x", "y", "z") == moon::LuaType::Number);
+                REQUIRE(Moon::Check<int>("map", "x", "y", "z"));
                 REQUIRE(s == "passed");
                 REQUIRE(d == 3.14);
                 REQUIRE(b);
@@ -49,11 +53,16 @@ return a, b, c
             auto a = Moon::Get<int>(1);
             auto b = Moon::Get<int>(2);
             auto c = Moon::Get<int>(3);
+            auto f = Moon::At(4).Get<std::function<std::tuple<int, int, int>(int, int, int)>>();
 
             THEN("values should match with expected") {
                 REQUIRE(a == 1);
                 REQUIRE(b == 2);
                 REQUIRE(c == 3);
+                auto tup = f(1, 2, 3);
+                REQUIRE(std::get<0>(tup) == 1);
+                REQUIRE(std::get<1>(tup) == 2);
+                REQUIRE(std::get<2>(tup) == 3);
             }
         }
 
@@ -67,7 +76,7 @@ return a, b, c
             }
         }
 
-        AND_WHEN("multiple globals are fetched by index") {
+        AND_WHEN("multiple globals are fetched by index in stack") {
             auto tup = Moon::Get<int, int, int>(1, 2, 3);
 
             THEN("values should match with expected") {
@@ -77,7 +86,7 @@ return a, b, c
             }
         }
 
-        AND_WHEN("multiple globals are fetched by name and index") {
+        AND_WHEN("multiple globals are fetched by name and index in stack") {
             auto tup = Moon::Get<std::string, int, double, int, bool, int>("string", 1, "number", 2, "boolean", 3);
 
             THEN("values should match with expected") {
@@ -101,22 +110,88 @@ return a, b, c
             }
         }
 
-        AND_WHEN("globals are cleared from stack") {
+        AND_WHEN("nested getter and setter are used") {
+            auto i = Moon::GetNested<int>("map2", "x", "y", "z", 2);
+            auto b = Moon::GetNested<bool>("boolean");
+            Moon::SetNested("map2", "x", "y", "z", 2, 1);
+            auto i2 = Moon::GetNested<int>("map2", "x", "y", "z", 2);
+            int i3 = Moon::GetNested<int>("array", 1);
+            Moon::SetNested("array", 2, 6);
+            int i4 = Moon::GetNested<int>("array", 2);
+            Moon::SetNested("array2", 1, true);
+            auto b2 = Moon::GetNested<bool>("array2", 1);
+            // New keys
+            Moon::SetNested("map2", "x", "y", "w", 1, 2);
+            int i5 = Moon::GetNested<int>("map2", "x", "y", "w", 1);
+
+            THEN("values should be valid and updated") {
+                REQUIRE(i == 2);
+                REQUIRE(i2 == 1);
+                REQUIRE(i3 == 1);
+                REQUIRE(i4 == 6);
+                REQUIRE(i5 == 2);
+                REQUIRE(b);
+                REQUIRE(b2);
+            }
+
+            AND_THEN("errors should be caught but not to throw") {
+                Moon::GetNested<int>("map2", "x");
+                REQUIRE(logs.ErrorCheck());
+            }
+        }
+
+        AND_WHEN("variables are cleared from stack") {
             Moon::At("string").Clean();
             Moon::At("number").Clean();
             Moon::At("boolean").Clean();
+            REQUIRE(Moon::At("map")["x"]["y"].GetType() == moon::LuaType::Table);
+            Moon::At("map")["x"]["y"].Clean();
 
             THEN("those values should be null") {
                 REQUIRE(Moon::GetType("string") == moon::LuaType::Null);
                 REQUIRE(Moon::At("number").GetType() == moon::LuaType::Null);
                 REQUIRE(Moon::At("boolean").GetType() == moon::LuaType::Null);
+                REQUIRE(Moon::At("map")["x"]["y"].GetType() == moon::LuaType::Null);
             }
         }
 
-        Moon::Pop(3);
+        AND_WHEN("nested get and set of functions is used") {
+            auto f = Moon::At("func_nested")["f"].Get<std::function<bool(bool)>>();
+            auto f2 = Moon::At("func_nested")["x"]["y"]["f"].Get<std::function<void(bool)>>();
+            bool b = false;
+            Moon::At("func_nested")["x"]["f"] = [&b](bool b_) { b = b_; };
+
+            THEN("all functions should be valid") {
+                REQUIRE(f);
+                REQUIRE(f2);
+                REQUIRE(f(true));
+                f2(false);
+                REQUIRE(logs.ErrorCheck());
+                Moon::At("func_nested")["x"]["f"](true);
+                REQUIRE(b);
+            }
+        }
+
+        AND_WHEN("get or set is used in null values") {
+            THEN("getters should log errors") {
+                Moon::Get<int>("asd");
+                REQUIRE(logs.ErrorCheck());
+                Moon::Get<double>(56);
+                REQUIRE(logs.ErrorCheck());
+                Moon::GetNested<bool>(6, "c", 5, 8, "z");
+                REQUIRE(logs.ErrorCheck());
+                Moon::At(1)["a"].Get<int>();
+                REQUIRE(logs.ErrorCheck());
+                Moon::At(1)["a"][2]["z"](true);
+                REQUIRE(logs.ErrorCheck());
+            }
+        }
+
+        Moon::Pop(4);
     }
 
     END_STACK_GUARD
+    INFO(logs.GetError())
     REQUIRE(logs.NoErrors());
     Moon::CloseState();
 }
@@ -147,6 +222,7 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
             Moon::At("f") = [&b](bool b_) { b = b_; };
             Moon::At("Foo") = Foo;
             Moon::At("BarFoo") = Bar::Foo;
+            Moon::At("nested_map")[1][5]["a"] = std::vector<int>{1, 2, 3};  // Must create complete path and needed tables
 
             THEN("globals should be available in Lua") {
                 REQUIRE(Moon::RunCode("assert(int == 2)"));
@@ -157,6 +233,7 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
                 REQUIRE(b);
                 REQUIRE(Moon::RunCode("assert(Foo(1, 2) == '3')"));
                 REQUIRE(Moon::RunCode("assert(BarFoo(true) == 'passed')"));
+                REQUIRE(Moon::RunCode("assert(nested_map[1][5].a[1] == 1)"));
             }
 
             AND_THEN("we should be able to get globals") {
@@ -199,9 +276,40 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
                 REQUIRE_FALSE(f3);
             }
         }
+
+        AND_WHEN("view is used to interact with global scope") {
+            auto& view = Moon::View();
+            view["int"] = 2;
+            view["floating"] = 2.f;
+            view["string"] = "passed";
+            view["bool"] = true;
+            view["f"] = [](const std::string& test) { return test; };
+            view["map"]["x"][1] = 2;
+
+            THEN("globals should be accessible") {
+                REQUIRE(view["int"].Check<int>());
+                REQUIRE(view["int"] == 2);
+                REQUIRE((3 != view["int"]));
+                REQUIRE(view["int"] != 2.0);  // Integrals and floating should be distinguishable
+                REQUIRE(logs.ErrorCheck());
+                REQUIRE(view["floating"] == 2.f);
+                REQUIRE(("passed" == view["string"]));
+                REQUIRE(view["bool"]);
+                REQUIRE(view["f"].GetType() == moon::LuaType::UserData);
+                REQUIRE(view["f"].Call<std::string>("passed") == "passed");
+            }
+
+            AND_THEN("nested fields should be accessible") {
+                REQUIRE(view["map"]["x"][1].Check<int>());
+                REQUIRE(view["map"]["x"][1].GetType() == moon::LuaType::Number);
+                int i = view["map"]["x"][1];
+                REQUIRE(i == 2);
+            }
+        }
     }
 
     END_STACK_GUARD
+    INFO(logs.GetError())
     REQUIRE(logs.NoErrors());
     Moon::CloseState();
 }

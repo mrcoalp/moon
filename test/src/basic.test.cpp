@@ -441,7 +441,7 @@ double = 3.14
     REQUIRE(Moon::Get<float>("float") == 12.6f);
     REQUIRE(Moon::Get<double>("double") == 3.14);
     REQUIRE(std::string(Moon::Get<const char*>("constChar")) == "passes");
-    Moon::CleanGlobalVariable("double");
+    Moon::Clean("double");
     REQUIRE_FALSE(Moon::Get<double>("double") == 3.14);
     END_STACK_GUARD
     Moon::CloseState();
@@ -472,12 +472,12 @@ SCENARIO("test multiple return getters", "[basic]") {
 
             THEN("stack must contain 3 values") { REQUIRE(Moon::GetTop() == 3); }
 
-            AND_THEN("values can be retrieved as tuple") {
-                auto tup = Moon::Get<std::tuple<int, std::string, bool>>(-1);
-                REQUIRE(std::get<0>(tup) == 1);
-                REQUIRE(std::get<1>(tup) == "passed");
-                REQUIRE(std::get<2>(tup));
-            }
+//            AND_THEN("values can be retrieved as tuple") {
+//                auto tup = Moon::Get<std::tuple<int, std::string, bool>>(-1);
+//                REQUIRE(std::get<0>(tup) == 1);
+//                REQUIRE(std::get<1>(tup) == "passed");
+//                REQUIRE(std::get<2>(tup));
+//            }
 
             AND_THEN("values can be retrieved as tuple list") {
                 auto tup = Moon::Get<int, std::string, bool>(-3, -2, -1);

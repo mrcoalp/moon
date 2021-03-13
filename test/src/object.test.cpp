@@ -444,6 +444,54 @@ SCENARIO("lua dynamic objects", "[object][basic]") {
 
             CHECK_STACK_GUARD
         }
+
+        AND_WHEN("objects are assigned other values") {
+            auto o = Moon::MakeObject(4);
+            REQUIRE(o.GetType() == moon::LuaType::Number);
+            o = std::vector<int>{1, 2, 3};
+
+            auto o2 = Moon::MakeObject(true);
+            REQUIRE(o2.GetType() == moon::LuaType::Boolean);
+            o2 = [](bool b) { return b; };
+
+            THEN("reference should be updated") {
+                REQUIRE(o.GetType() == moon::LuaType::Table);
+                REQUIRE(o.Is<std::vector<int>>());
+                REQUIRE(o[1] == 1);
+
+                REQUIRE(o2.GetType() == moon::LuaType::UserData);
+                REQUIRE(o2.Call<bool>(true));
+            }
+        }
+
+        AND_WHEN("operator [] is used to get or set values") {
+            std::map<std::string, int> map{{"x", 1}, {"y", 2}, {"z", 3}};
+            auto o = Moon::MakeObject(map);
+            o["w"] = 4;
+
+            std::vector<std::map<std::string, std::map<std::string, int>>> vec;
+            vec.push_back({{"first", map}});
+            vec.push_back({{"third", map}});
+            auto o2 = Moon::MakeObject(vec);
+            o2[1]["second"] = map;
+            bool b = false;
+            o2["f"] = [&b](bool b_) { b = b_; };
+
+            THEN("simple maps should work") {
+                REQUIRE(o["x"] == 1);
+                REQUIRE(o["y"] == 2);
+                REQUIRE(o["z"] == 3);
+                REQUIRE(o["w"] == 4);
+            }
+
+            AND_THEN("more complex data should work") {
+                REQUIRE(o2[1]["first"]["x"] == 1);
+                REQUIRE(o2[1]["second"]["y"] == 2);
+                REQUIRE(o2[2]["third"]["z"] == 3);
+                o2["f"](true);
+                REQUIRE(b);
+            }
+        }
     }
 
     END_STACK_GUARD
