@@ -26,14 +26,14 @@ usage() {
 
     build.sh [options]
 
-    Builds the game, by default, with debug configuration.
+    Builds the moon, by default, with debug configuration.
 
 Options
     -h | --help         - Show help
-    -d | --debug        - Build game with debug configuration
-    -r | --release      - Build game with release configuration
+    -d | --debug        - Build moon with debug configuration
+    -r | --release      - Build moon with release configuration
     -c | --clean        - Clean build of configuration
-    -i | --install      - Install game to build/bin folder
+    -i | --install      - Install moon to build/bin folder
     -j | --jobs <#jobs> - Number of jobs to use
     --static            - Build static lib instead of shared
     --ninja             - Use Ninja as build system

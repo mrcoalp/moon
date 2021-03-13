@@ -11,8 +11,8 @@ set configuration=Debug
     if not "%~1" == "" goto loop
 
 :test
-    cd build/%configuration%/test || goto end
-    %configuration%\moon_tst
+    cd build\%configuration%\test || exit 1
+    %configuration%\moon_tst || moon_tst || exit 1
     cd ..\..\..
     goto end
 

@@ -7,34 +7,49 @@ on:
   pull_request:
 
 jobs:
-  build:
+  gcc:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        args: [ -d -t, -d -t --static, -r -t, -r -t --static ]
     steps:
       - uses: actions/checkout@v2
+      - name: Build
+        run: bash platform-scripts/linux/build.sh ${{ matrix.args }}
+      - name: Test
+        run: bash platform-scripts/linux/test.sh ${{ matrix.args }}
 
+  clang:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        args: [ -d -t --clang, -d -t --static --clang, -r -t --clang, -r -t --static --clang ]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build
+        run: bash platform-scripts/linux/build.sh ${{ matrix.args }}
+      - name: Test
+        run: bash platform-scripts/linux/test.sh ${{ matrix.args }}
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
       - name: Prepare environment
         run: sudo apt-get install gcovr -y
-
-      - name: Build Debug
-        run: bash platform-scripts/linux/build.sh -t --coverage
-
-      - name: Build Release
-        run: bash platform-scripts/linux/build.sh -r -t --coverage
-
-      - name: Test
-        run: bash platform-scripts/linux/test.sh --coverage
-
-      - name: Upload test results and coverage
+      - name: Build coverage
+        run: |
+          bash platform-scripts/linux/build.sh -t --coverage
+          bash platform-scripts/linux/test.sh --coverage
+      - name: Upload coverage artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: test-results-coverage
+          name: test-coverage
           path: |
             test_results.xml
             moon_coverage_html/
             moon_coverage.xml
           retention-days: 5
-
       - name: Upload code coverage to codecov
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
