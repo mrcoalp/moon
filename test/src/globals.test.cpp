@@ -25,7 +25,7 @@ func_nested = { f = function(bool) return bool, 2 end, x = { y = { f = function(
 local a = 1
 local b = 2
 local c = 3
-return a, b, c
+return a, b, c, function(a, b, c) return a, b, c end
 )"));
         using traverse_map = std::map<std::string, std::map<std::string, std::map<std::string, int>>>;
 
@@ -53,11 +53,16 @@ return a, b, c
             auto a = Moon::Get<int>(1);
             auto b = Moon::Get<int>(2);
             auto c = Moon::Get<int>(3);
+            auto f = Moon::At(4).Get<std::function<std::tuple<int, int, int>(int, int, int)>>();
 
             THEN("values should match with expected") {
                 REQUIRE(a == 1);
                 REQUIRE(b == 2);
                 REQUIRE(c == 3);
+                auto tup = f(1, 2, 3);
+                REQUIRE(std::get<0>(tup) == 1);
+                REQUIRE(std::get<1>(tup) == 2);
+                REQUIRE(std::get<2>(tup) == 3);
             }
         }
 
@@ -71,7 +76,7 @@ return a, b, c
             }
         }
 
-        AND_WHEN("multiple globals are fetched by index") {
+        AND_WHEN("multiple globals are fetched by index in stack") {
             auto tup = Moon::Get<int, int, int>(1, 2, 3);
 
             THEN("values should match with expected") {
@@ -81,7 +86,7 @@ return a, b, c
             }
         }
 
-        AND_WHEN("multiple globals are fetched by name and index") {
+        AND_WHEN("multiple globals are fetched by name and index in stack") {
             auto tup = Moon::Get<std::string, int, double, int, bool, int>("string", 1, "number", 2, "boolean", 3);
 
             THEN("values should match with expected") {
@@ -117,7 +122,7 @@ return a, b, c
         //            }
         //        }
 
-        AND_WHEN("traverse getter and setter are used") {
+        AND_WHEN("nested getter and setter are used") {
             auto i = Moon::GetNested<int>("map2", "x", "y", "z", 2);
             auto b = Moon::GetNested<bool>("boolean");
             Moon::SetNested("map2", "x", "y", "z", 2, 1);
@@ -136,7 +141,6 @@ return a, b, c
                 REQUIRE(i2 == 1);
                 REQUIRE(i3 == 1);
                 REQUIRE(i4 == 6);
-                INFO(logs.GetError());
                 REQUIRE(i5 == 2);
                 REQUIRE(b);
                 REQUIRE(b2);
@@ -148,27 +152,24 @@ return a, b, c
             }
         }
 
-        AND_WHEN("view is used to access state") {
-            auto& view = Moon::View();
+        AND_WHEN("nested get and set of functions is used") {
+            auto f = Moon::At("func_nested")["f"].Get<std::function<bool(bool)>>();
+            auto f2 = Moon::At("func_nested")["x"]["y"]["f"].Get<std::function<void(bool)>>();
+            bool b = false;
+            Moon::At("func_nested")["x"]["f"] = [&b](bool b_) { b = b_; };
 
-            THEN("values can be fetched") {
-                REQUIRE(view["number"] == 3.14);
-                REQUIRE(view["boolean"]);
-                int i = view["array"][3];  // TODO(MPINTO): Fix this need for explicit cast, review reference handling
-                REQUIRE(i == 3);
-                int i2 = view["map2"]["x"]["y"]["z"][2];
-                REQUIRE(i2 == 2);
-            }
-
-            AND_THEN("functions can be called") {
-                auto b = view["func_nested"]["f"].Call<bool>(true);
+            THEN("all functions should be valid") {
+                REQUIRE(f);
+                REQUIRE(f2);
+                REQUIRE(f(true));
+                f2(false);
+                REQUIRE(logs.ErrorCheck());
+                Moon::At("func_nested")["x"]["f"](true);
                 REQUIRE(b);
-                view["func_nested"]["x"]["y"]["f"](true);
-                REQUIRE(logs.NoErrors());
             }
         }
 
-        Moon::Pop(3);
+        Moon::Pop(4);
     }
 
     END_STACK_GUARD

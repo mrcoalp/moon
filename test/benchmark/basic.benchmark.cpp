@@ -20,6 +20,10 @@ TEST_CASE("get values from stack benchmark", "[basic][benchmark]") {
     BENCHMARK("get function") { return Moon::Get<std::function<bool(bool)>>(5); };
     BENCHMARK("get reference") { return Moon::Get<moon::Reference>(1); };
     BENCHMARK("get object") { return Moon::Get<moon::Object>(1); };
+    {
+        auto obj = Moon::MakeObject(std::vector<int>{1, 2, 3});
+        BENCHMARK("object deep access") { return (int)obj[3]; };
+    }
 
     Moon::CloseState();
 }
