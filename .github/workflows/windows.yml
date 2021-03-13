@@ -23,10 +23,10 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        args: [ -d -t --mingw, -d -t --shared --mingw, -r -t --mingw, -r -t --shared --mingw ]
+        args: [ -r -t --mingw, -r -t --shared --mingw ]
     steps:
       - uses: actions/checkout@v2
-      - name: Build Debug
+      - name: Build
         run: platform-scripts\windows\build ${{ matrix.args }}
-      - name: Test Debug
+      - name: Test
         run: platform-scripts\windows\test ${{ matrix.args }}

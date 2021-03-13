@@ -29,8 +29,8 @@ set generator="Visual Studio 16 2019"
     )
     mkdir build\%configuration%
     cd build\%configuration%
-    cmake ..\.. -G %generator% -DBUILD_SHARED_LIBS=%shared% -DMOON_BUILD_TESTS=%tests% -DMOON_BUILD_DOC=%doc% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_INSTALL_PREFIX=./bin
-    cmake --build . --config %configuration% %install%
+    cmake ..\.. -G %generator% -DBUILD_SHARED_LIBS=%shared% -DMOON_BUILD_TESTS=%tests% -DMOON_BUILD_DOC=%doc% -DCMAKE_BUILD_TYPE=%configuration% -DCMAKE_INSTALL_PREFIX=./bin || exit 1
+    cmake --build . --config %configuration% %install% || exit 1
     cd ..\..
     goto end
 
