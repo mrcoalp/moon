@@ -172,6 +172,21 @@ return a, b, c, function(a, b, c) return a, b, c end
             }
         }
 
+        AND_WHEN("get or set is used in null values") {
+            THEN("getters should log errors") {
+                Moon::Get<int>("asd");
+                REQUIRE(logs.ErrorCheck());
+                Moon::Get<double>(56);
+                REQUIRE(logs.ErrorCheck());
+                Moon::GetNested<bool>(6, "c", 5, 8, "z");
+                REQUIRE(logs.ErrorCheck());
+                Moon::At(1)["a"].Get<int>();
+                REQUIRE(logs.ErrorCheck());
+                Moon::At(1)["a"][2]["z"](true);
+                REQUIRE(logs.ErrorCheck());
+            }
+        }
+
         Moon::Pop(4);
     }
 
@@ -207,6 +222,7 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
             Moon::At("f") = [&b](bool b_) { b = b_; };
             Moon::At("Foo") = Foo;
             Moon::At("BarFoo") = Bar::Foo;
+            Moon::At("nested_map")[1][5]["a"] = std::vector<int>{1, 2, 3};  // Must create complete path and needed tables
 
             THEN("globals should be available in Lua") {
                 REQUIRE(Moon::RunCode("assert(int == 2)"));
@@ -217,6 +233,7 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
                 REQUIRE(b);
                 REQUIRE(Moon::RunCode("assert(Foo(1, 2) == '3')"));
                 REQUIRE(Moon::RunCode("assert(BarFoo(true) == 'passed')"));
+                REQUIRE(Moon::RunCode("assert(nested_map[1][5].a[1] == 1)"));
             }
 
             AND_THEN("we should be able to get globals") {
@@ -263,16 +280,23 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
         AND_WHEN("view is used to interact with global scope") {
             auto& view = Moon::View();
             view["int"] = 2;
+            view["floating"] = 2.f;
             view["string"] = "passed";
-            view["f"] = [](bool test) { return test; };
+            view["bool"] = true;
+            view["f"] = [](const std::string& test) { return test; };
             view["map"]["x"][1] = 2;
 
             THEN("globals should be accessible") {
                 REQUIRE(view["int"].Check<int>());
                 REQUIRE(view["int"] == 2);
-                // REQUIRE("passed" == std::string(view["string"]));  // TODO(MPINTO): Fix the need for this cast
+                REQUIRE((3 != view["int"]));
+                REQUIRE(view["int"] != 2.0);  // Integrals and floating should be distinguishable
+                REQUIRE(logs.ErrorCheck());
+                REQUIRE(view["floating"] == 2.f);
+                REQUIRE(("passed" == view["string"]));
+                REQUIRE(view["bool"]);
                 REQUIRE(view["f"].GetType() == moon::LuaType::UserData);
-                REQUIRE(view["f"].Call<bool>(true));
+                REQUIRE(view["f"].Call<std::string>("passed") == "passed");
             }
 
             AND_THEN("nested fields should be accessible") {
@@ -285,6 +309,7 @@ SCENARIO("push global values to Lua stack", "[basic][global]") {
     }
 
     END_STACK_GUARD
+    INFO(logs.GetError())
     REQUIRE(logs.NoErrors());
     Moon::CloseState();
 }
