@@ -35,17 +35,18 @@ set generator="Visual Studio 16 2019"
     goto end
 
 :usage
-    echo "Usage"
-    echo "  build [options]"
-    echo "  Builds the game, by default, with debug configuration."
-    echo "Options"
-    echo "  -h          - Show help"
-    echo "  -d          - Build game with debug configuration"
-    echo "  -r          - Build game with release configuration"
-    echo "  -c          - Clean build of configuration"
-    echo "  -t          - Build tests"
-    echo "  --docs      - Build docs"
-    echo "  --shared    - Build shared libs"
+    echo Usage
+    echo   build [options]
+    echo   Builds the game, by default, with debug configuration.
+    echo Options
+    echo   -h          - Show help
+    echo   -d          - Build game with debug configuration
+    echo   -r          - Build game with release configuration
+    echo   -c          - Clean build of configuration
+    echo   -t          - Build tests
+    echo   --docs      - Build docs
+    echo   --shared    - Build shared libs
+    echo   --mingw     - Use mingw compiler
     goto end
 
 :end

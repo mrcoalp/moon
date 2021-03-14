@@ -17,13 +17,13 @@ set configuration=Debug
     goto end
 
 :usage
-    echo "Usage"
-    echo "  test [options]"
-    echo "  Runs the test suite, by default, with debug configuration."
-    echo "Options"
-    echo "  -h  - Show help"
-    echo "  -d  - Run tests with debug configuration"
-    echo "  -r  - Run tests with release configuration"
+    echo Usage
+    echo   test [options]
+    echo   Runs the test suite, by default, with debug configuration.
+    echo Options
+    echo   -h  - Show help
+    echo   -d  - Run tests with debug configuration
+    echo   -r  - Run tests with release configuration
     goto end
 
 :end
