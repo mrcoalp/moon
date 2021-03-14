@@ -51,7 +51,7 @@ OUT=$(pwd)
 cd build/$CONFIGURATION/test || exit 1
 
 if [ $COVERAGE = 1 ]; then
-  ./moon_tst -o "$OUT"/test_results.xml -r junit
+  ./moon_test -o "$OUT"/test_results.xml -r junit
 
   mkdir moon_coverage_html
 
@@ -65,6 +65,6 @@ if [ $COVERAGE = 1 ]; then
   mv moon_coverage.xml "$OUT"
 fi
 
-./moon_tst --benchmark-no-analysis --benchmark-samples 1000 || exit 1
+./moon_test --benchmark-no-analysis --benchmark-samples 1000 || exit 1
 
 exit 0

@@ -16,6 +16,6 @@ tidy_coverage.txt
 format_coverage.txt
 test_results.xml
 compile_commands.json
-lua/
+external/
 moon_coverage_html/
 moon_coverage.xml

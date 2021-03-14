@@ -12,7 +12,7 @@ set configuration=Debug
 
 :test
     cd build\%configuration%\test || exit 1
-    %configuration%\moon_tst || moon_tst || exit 1
+    %configuration%\moon_test || moon_test || exit 1
     cd ..\..\..
     goto end
 

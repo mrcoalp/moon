@@ -1,19 +1,16 @@
 enable_testing()
 
-set(BINARY ${CMAKE_PROJECT_NAME}_test)
+set(BINARY ${CMAKE_PROJECT_NAME}_benchmark)
 
 file(GLOB_RECURSE SOURCE src/*.cpp)
 
-add_executable(${BINARY} test-main.cpp ${SOURCE})
+add_executable(${BINARY} benchmark-main.cpp ${SOURCE})
 
 add_test(NAME ${BINARY} COMMAND ${BINARY})
 
-target_include_directories(${BINARY} PRIVATE include)
-
 target_link_libraries(${BINARY} PRIVATE Catch2 moon)
 
-# Copy scripts folder to binary destination
-file(COPY scripts DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_definitions(${BINARY} PRIVATE -DCATCH_CONFIG_ENABLE_BENCHMARKING)
 
 if ((MSVC OR MINGW) AND BUILD_SHARED_LIBS)
     set(LUA_BINARY_DIR "${PROJECT_BINARY_DIR}/lua")
