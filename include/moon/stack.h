@@ -319,8 +319,22 @@ public:
         return true;
     }
 
+    /// Checks for status error and retrieves error message from stack.
+    /// \param L Lua state.
+    /// \param status Status to check.
+    /// \param errMessage Default error message if none os found in stack.
+    /// \return Either null optional (when no errors occur) or error string.
+    static std::optional<std::string> CheckErrorStatus(lua_State* L, int status, const char* errMessage = "") {
+        if (status != LUA_OK) {
+            const auto* msg = GetValue<const char*>(L, -1);
+            lua_pop(L, 1);
+            return std::optional<std::string>{msg != nullptr ? msg : errMessage};
+        }
+        return std::nullopt;
+    }
+
     static std::optional<std::string> CallFunctionWithErrorCheck(lua_State* L, int numberArgs, int numberReturns) {
-        return checkErrorStatus(L, lua_pcall(L, numberArgs, numberReturns, 0));
+        return CheckErrorStatus(L, lua_pcall(L, numberArgs, numberReturns, 0));
     }
 
 private:
@@ -343,20 +357,6 @@ private:
     template <typename T, size_t... indices>
     static void pushTupleHelper(std::index_sequence<indices...>, lua_State* L, T&& value) {
         (PushValue(L, std::get<indices>(std::forward<T>(value))), ...);
-    }
-
-    /// Checks for status error and retrieves error message from stack.
-    /// \param L Lua state.
-    /// \param status Status to check.
-    /// \param errMessage Default error message if none os found in stack.
-    /// \return Either null optional (when no errors occur) or error string.
-    static std::optional<std::string> checkErrorStatus(lua_State* L, int status, const char* errMessage = "") {
-        if (status != LUA_OK) {
-            const auto* msg = GetValue<const char*>(L, -1);
-            lua_pop(L, 1);
-            return std::optional<std::string>{msg != nullptr ? msg : errMessage};
-        }
-        return std::nullopt;
     }
 };
 }  // namespace moon

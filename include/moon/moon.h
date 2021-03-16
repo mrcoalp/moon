@@ -14,8 +14,9 @@
 #include <utility>
 #include <vector>
 
-#include "object.h"
-#include "stateview.h"
+#include "moon/object.h"
+#include "moon/script.h"
+#include "moon/stateview.h"
 
 #define MOON_DECLARE_CLASS(_class) static moon::Binding<_class> Binding;
 
@@ -99,23 +100,32 @@ public:
     static inline int ConvertNegativeIndex(int index) { return lua_absindex(s_state, index); }
 
     /// Loads specified file script.
+    /// \tparam Path Path type.
     /// \param filePath File path to load.
     /// \return Whether or not file was successfully loaded.
-    static bool LoadFile(const char* filePath) {
-        if (!checkStatus(luaL_loadfile(s_state, filePath), "Error loading file")) {
+    template <typename Path>
+    static bool LoadFile(Path&& filePath) {
+        if (!checkStatus(luaL_loadfile(s_state, &filePath[0]), "Error loading file")) {
             return false;
         }
         return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Loading file failed");
     }
 
     /// Runs Lua code snippet.
+    /// \tparam Code Code string.
     /// \param code Code to run.
     /// \return Whether or not code ran without errors.
-    static bool RunCode(const char* code) {
-        if (!checkStatus(luaL_loadstring(s_state, code), "Error running code")) {
+    template <typename Code>
+    static bool RunCode(Code&& code) {
+        if (!checkStatus(luaL_loadstring(s_state, &code[0]), "Error running code")) {
             return false;
         }
         return checkStatus(lua_pcall(s_state, 0, LUA_MULTRET, 0), "Running code failed");
+    }
+
+    template <typename Code>
+    static inline moon::Script Run(Code&& code) {
+        return {s_state, std::forward<Code>(code)};
     }
 
     /// Get type of Lua value at index in stack or with specific name.
@@ -247,7 +257,7 @@ public:
     template <typename Name, typename Func>
     static inline void RegisterFunction(Name&& name, Func&& func) {
         moon::Core::PushFunction(s_state, std::forward<Func>(func));
-        moon::Core::FieldHandler<true, Name>{}.Set(s_state, -1, std::forward<Name>(name));
+        moon::Core::FieldHandler<true, Name, false>{s_state}.Set(s_state, -1, std::forward<Name>(name));
     }
 
     /// Calls a global Lua function.
@@ -259,7 +269,7 @@ public:
     /// \return Return value of function.
     template <typename... Ret, typename Key, typename... Args>
     static inline decltype(auto) Call(Key&& key, Args&&... args) {
-        moon::Core::FieldHandler<true, Key>{}.Get(s_state, 0, std::forward<Key>(key));
+        moon::Core::FieldHandler<true, Key, false>{s_state}.Get(s_state, -1, std::forward<Key>(key));
         return moon::Core::Call<Ret...>(s_state, std::forward<Args>(args)...);
     }
 
